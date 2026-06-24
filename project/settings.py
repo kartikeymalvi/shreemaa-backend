@@ -1,3 +1,6 @@
+
+
+#####----------local setup-------------------------
 # from pathlib import Path
 # from datetime import timedelta
 
@@ -10,8 +13,8 @@
 # # SECURITY WARNING: don't run with debug turned on in production!
 # DEBUG = True
 
-# # Live server ke liye sabhi hosts ko allow karna zaroori hai
-# ALLOWED_HOSTS = ['*']
+# # LOCAL SERVER KE LIYE: Sirf local host ko allow karna
+# ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 # # Application definition
 # INSTALLED_APPS = [
@@ -31,18 +34,11 @@
 # # Custom User Model define karna zaroori hai
 # AUTH_USER_MODEL = 'accounts.CustomUser'
 
-# # MySQL Database Setup (Aiven Cloud - YE AKELA RAHEGA AB)
+# # --- DEFAULT SQLITE DATABASE (Local Development Ke Liye) ---
 # DATABASES = {
 #     'default': {
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': 'defaultdb',       
-#         'USER': 'avnadmin',        
-#         'PASSWORD': 'AVNS_SXxYpGuLdYl7fQtqB85', 
-#         'HOST': 'mysql-3332836a-kartikeymalvi-edf5.b.aivencloud.com',     
-#         'PORT': '25633', 
-#         'OPTIONS': {
-#             'ssl': {'ssl_mode': 'REQUIRED'}
-#         }        
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
 
@@ -60,8 +56,13 @@
 
 # ROOT_URLCONF = 'project.urls'
 
-# # CORS Settings (Live server ke liye)
-# CORS_ALLOW_ALL_ORIGINS = True
+# # --- CORS Settings (Local React ko allow karne ke liye) ---
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:5173",
+#     "http://localhost:3000",
+#     "http://127.0.0.1:5173",
+#     "http://127.0.0.1:3000",
+# ]
 # CORS_ALLOW_CREDENTIALS = True
 
 # # DRF & JWT Settings
@@ -112,7 +113,9 @@
 # STATIC_URL = 'static/'
 # STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+#####----------Deployemnt setup-------------------------
 
+import os
 from pathlib import Path
 from datetime import timedelta
 
@@ -123,10 +126,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-!kg0#bb=%*6_h61(3r%3zew*li@&zonaau^64+t)!b^+)7@xvk'
 
 # SECURITY WARNING: don't run with debug turned on in production!
+# Render par isko baad me False karna chahiye security ke liye, par demo tak True theek hai taaki errors dikh sakein.
 DEBUG = True
 
-# LOCAL SERVER KE LIYE: Sirf local host ko allow karna
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+# Live server ke liye sabhi hosts ko allow karna zaroori hai (Ya yahan Render ka exact URL likh dein)
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
@@ -146,17 +150,24 @@ INSTALLED_APPS = [
 # Custom User Model define karna zaroori hai
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
-# --- DEFAULT SQLITE DATABASE (Local Development Ke Liye) ---
+# --- MySQL Database Setup (Aiven Cloud - LIVE DB) ---
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'defaultdb',       
+        'USER': 'avnadmin',        
+        'PASSWORD': 'AVNS_SXxYpGuLdYl7fQtqB85', 
+        'HOST': 'mysql-3332836a-kartikeymalvi-edf5.b.aivencloud.com',     
+        'PORT': '25633', 
+        'OPTIONS': {
+            'ssl': {'ssl_mode': 'REQUIRED'}
+        }        
     }
 }
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware', # Isko sabse upar rakhna best practice hai
     'whitenoise.middleware.WhiteNoiseMiddleware', 
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -168,13 +179,9 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'project.urls'
 
-# --- CORS Settings (Local React ko allow karne ke liye) ---
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:3000",
-]
+# --- CORS Settings (Live server ke liye) ---
+# Demo aur development ke liye True theek hai. Production me apne Vercel URL ko CORS_ALLOWED_ORIGINS me daalna chahiye.
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # DRF & JWT Settings
@@ -223,4 +230,7 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Render/Live server ke liye static files ko collect karne ka path (WhiteNoise ke liye zaroori)
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
