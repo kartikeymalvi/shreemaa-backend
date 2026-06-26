@@ -5,13 +5,14 @@ from rest_framework.decorators import api_view
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord
 from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer
 import pandas as pd
 from django.db.models import Q
 import math
 import datetime
 from rest_framework.pagination import PageNumberPagination
+from django.db.models import Sum
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 50
@@ -62,6 +63,9 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
 
         return queryset
 
+
+
+
 class BulkUploadExcelView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -84,9 +88,11 @@ class BulkUploadExcelView(APIView):
             valid_asins = set(ProductModel.objects.values_list('asin_fsn', flat=True))
             valid_model_names = set(ProductModel.objects.values_list('model_name', flat=True))
             valid_model_nos = set(ProductModel.objects.values_list('model', flat=True))
-            existing_orders = set(OrderReport.objects.values_list('order_id', flat=True))
+            
+            # 🔥 FIX 1: Ab sirf Order ID nahi, balki (Order ID, ASIN) dono ka JODA (tuple) layenge
+            existing_orders = set(OrderReport.objects.values_list('order_id', 'asin_fsn'))
 
-            # 🔥 INITIALIZE ERROR COUNTERS
+            # INITIALIZE ERROR COUNTERS
             dup_count = 0
             firm_count = 0
             loc_count = 0
@@ -95,7 +101,8 @@ class BulkUploadExcelView(APIView):
             mname_count = 0
             mno_count = 0
             
-            file_order_ids = set()
+            # 🔥 FIX 2: File ke andar duplicates rokne ke liye naya set
+            file_order_asins = set() 
 
             # --- VALIDATION LOOP (Saare records check karega) ---
             for index, row in df.iterrows():
@@ -109,13 +116,14 @@ class BulkUploadExcelView(APIView):
                 model_name = str(row.get('model name', '')).strip()
                 model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip()
 
-                # 1. Duplicate Order ID Check
-                if order_id in existing_orders or order_id in file_order_ids:
+                # 🔥 FIX 3: Combo Check - Agar same order id aur same ASIN mila, tabhi error aayega
+                order_asin_combo = (order_id, asin_fsn)
+                if order_asin_combo in existing_orders or order_asin_combo in file_order_asins:
                     dup_count += 1
-                file_order_ids.add(order_id)
+                file_order_asins.add(order_asin_combo)
 
-                # 2. Strict Master Match Checks
-                if firm and firm not in valid_firms: dup_count += 0; firm_count += 1
+                # Strict Master Match Checks
+                if firm and firm not in valid_firms: firm_count += 1
                 if location and location not in valid_locations: loc_count += 1
                 if merchant and merchant not in valid_merchants: merch_count += 1
                 if asin_fsn and asin_fsn not in valid_asins: asin_count += 1
@@ -124,7 +132,7 @@ class BulkUploadExcelView(APIView):
 
             # 🔥 COMPACT SUMMARY GENERATOR
             error_segments = []
-            if dup_count > 0: error_segments.append(f"{dup_count} Duplicate Order ID(s)")
+            if dup_count > 0: error_segments.append(f"{dup_count} Duplicate Order+ASIN entry(s)")
             if firm_count > 0: error_segments.append(f"{firm_count} Firm mismatch(es)")
             if loc_count > 0: error_segments.append(f"{loc_count} Location mismatch(es)")
             if merch_count > 0: error_segments.append(f"{merch_count} Merchant mismatch(es)")
@@ -238,6 +246,7 @@ class ProductModelViewSet(viewsets.ModelViewSet):
 class InvoiceShipmentViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceShipmentSerializer
     pagination_class = StandardResultsSetPagination # (FIX: Pagination Uncomment kar diya hai)
+    
 
     def get_queryset(self):
         queryset = InvoiceShipment.objects.all().order_by('-id')
@@ -256,15 +265,26 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
         if delivery_status:
             queryset = queryset.filter(delivery_status=delivery_status)
 
+        search_query = self.request.GET.get('search', '').strip()
+        if search_query:
+            queryset = queryset.filter(
+                Q(order_id__icontains=search_query) |
+                Q(invoice_no__icontains=search_query) |
+                Q(seller_name__icontains=search_query) |
+                Q(asin_fsn__icontains=search_query) |
+                Q(model_no__icontains=search_query) |
+                Q(seller_gstn__icontains=search_query)
+            )    
+
         return queryset
 
+# --- INVOICE SHIPMENT UPLOAD (STRICT COMBINED VALIDATION) ---
 class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get('file')
-        if not file:
-            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+        if not file: return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             if file.name.endswith('.csv'): df = pd.read_csv(file)
@@ -273,35 +293,46 @@ class InvoiceShipmentUploadView(APIView):
             df = df.fillna('')
             df.columns = df.columns.str.strip().str.lower()
             
+            # Master Data Lookups
             valid_orders = set(OrderReport.objects.values_list('order_id', flat=True))
             valid_firms = set(Firm.objects.values_list('name', flat=True))
             valid_locations = set(Location.objects.values_list('name', flat=True))
-            valid_asins = set(ProductModel.objects.values_list('asin_fsn', flat=True))
-            existing_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').exclude(invoice_no__isnull=True).values_list('invoice_no', flat=True))
             
-            # 🔥 INITIALIZE COUNTERS FOR SHIPMENTS
+            # Model checking lookup: { 'asin': ('model_name', 'model_no') }
+            valid_models = {m.asin_fsn: (m.model_name, m.model) for m in ProductModel.objects.all()}
+            
+            existing_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
+            
+            # 🔥 SMART CHECK: Existing Order + ASIN pairs in Database
+            existing_order_items = set(InvoiceShipment.objects.values_list('order_id', 'asin_fsn'))
+            
+            # Counters
             missing_order_count = 0
             missing_invoice_count = 0
             dup_invoice_count = 0
-            firm_count = 0
-            loc_count = 0
-            asin_count = 0
+            dup_item_in_order_count = 0
+            master_mismatch_count = 0
             
             file_invoices = set()
+            file_order_items = set()
 
             # --- VALIDATION LOOP ---
             for index, row in df.iterrows():
                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
                 if not order_id: continue
 
+                invoice_no = str(row.get('invoice no', row.get('invoice_no', ''))).strip()
+                asin_fsn = str(row.get('asin/fsn', row.get('asin_fsn', ''))).strip()
+                model_name = str(row.get('model name', '')).strip()
+                model_no = str(row.get('model', row.get('model no', ''))).strip()
                 firm = str(row.get('firm', '')).strip()
                 location = str(row.get('location', '')).strip()
-                asin_fsn = str(row.get('asin/fsn', '')).strip()
-                invoice_no = str(row.get('invoice no', row.get('invoice_no', ''))).strip()
 
+                # 1. Order ID Exist Check
                 if order_id not in valid_orders:
                     missing_order_count += 1
                 
+                # 2. Invoice No Unique Check (Cannot be duplicate)
                 if not invoice_no:
                     missing_invoice_count += 1
                 else:
@@ -309,52 +340,79 @@ class InvoiceShipmentUploadView(APIView):
                         dup_invoice_count += 1
                     file_invoices.add(invoice_no)
 
-                if firm and firm not in valid_firms: firm_count += 1
-                if location and location not in valid_locations: loc_count += 1
-                if asin_fsn and asin_fsn not in valid_asins: asin_count += 1
+                # 3. Same Order ID + Same ASIN Check (Must be different)
+                order_item_pair = (order_id, asin_fsn)
+                if order_item_pair in existing_order_items or order_item_pair in file_order_items:
+                    dup_item_in_order_count += 1
+                file_order_items.add(order_item_pair)
 
-            # 🔥 COMPACT SUMMARY GENERATOR FOR SHIPMENTS
+                # 4. Master Data & Model Name/No Validation
+                if firm and firm not in valid_firms: master_mismatch_count += 1
+                if location and location not in valid_locations: master_mismatch_count += 1
+                
+                if asin_fsn in valid_models:
+                    db_model_name, db_model_no = valid_models[asin_fsn]
+                    if model_name and model_name != db_model_name: master_mismatch_count += 1
+                    if model_no and model_no != db_model_no: master_mismatch_count += 1
+                else:
+                    if asin_fsn: master_mismatch_count += 1
+
+            # --- ERROR SUMMARY GENERATOR ---
             error_segments = []
-            if missing_order_count > 0: error_segments.append(f"{missing_order_count} Invalid Order ID(s)")
+            if missing_order_count > 0: error_segments.append(f"{missing_order_count} Order ID(s) not found in Order Reports")
             if missing_invoice_count > 0: error_segments.append(f"{missing_invoice_count} Missing Invoice No(s)")
             if dup_invoice_count > 0: error_segments.append(f"{dup_invoice_count} Duplicate Invoice No(s)")
-            if firm_count > 0: error_segments.append(f"{firm_count} Firm mismatch(es)")
-            if loc_count > 0: error_segments.append(f"{loc_count} Location mismatch(es)")
-            if asin_count > 0: error_segments.append(f"{asin_count} ASIN/FSN mismatch(es)")
+            if dup_item_in_order_count > 0: error_segments.append(f"{dup_item_in_order_count} Duplicate Item(s) in same Order ID")
+            if master_mismatch_count > 0: error_segments.append(f"{master_mismatch_count} Master/Model mismatch(es)")
 
             if error_segments:
-                total_errors = missing_order_count + missing_invoice_count + dup_invoice_count + firm_count + loc_count + asin_count
-                summary_msg = "Validation Failed! Found: " + ", ".join(error_segments) + f". Total {total_errors} errors. No records saved!"
-                return Response({"error": summary_msg}, status=status.HTTP_400_BAD_REQUEST)
+                total_errors = missing_order_count + missing_invoice_count + dup_invoice_count + dup_item_in_order_count + master_mismatch_count
+                return Response({"error": f"Validation Failed! Found: {', '.join(error_segments)}. Total {total_errors} errors. No records saved!"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # --- SAVE LOOP ---
+            # --- SMART SAVE LOOP (Auto-Fetch from Order Reports) ---
             records = []
             for index, row in df.iterrows():
                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
-                if not order_id: continue
-
-                raw_inv_date = row.get('invoice date', row.get('invoice_date', ''))
-                invoice_date = None
-                if raw_inv_date:
-                    try: invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d')
-                    except: pass
+                asin_fsn = str(row.get('asin/fsn', row.get('asin_fsn', ''))).strip()
                 
-                raw_txn_date = row.get('txn date', row.get('txn_date', ''))
-                txn_date = None
-                if raw_txn_date:
-                    try: txn_date = pd.to_datetime(raw_txn_date, dayfirst=True).strftime('%Y-%m-%d')
-                    except: pass
+                if not order_id or not asin_fsn: 
+                    continue
 
-                records.append(InvoiceShipment(
-                    order_id=order_id, txn_date=txn_date, invoice_date=invoice_date,
-                    firm=str(row.get('firm', '')).strip(), location=str(row.get('location', '')).strip(),
-                    asin_fsn=str(row.get('asin/fsn', '')).strip(), invoice_no=str(row.get('invoice no', row.get('invoice_no', ''))).strip(),
-                    seller_name=str(row.get('seller name', row.get('seller_name', ''))).strip(),
-                    seller_gstn=str(row.get('seller gstn', row.get('seller_gstn', ''))).strip(),
-                    invoice_qty=int(float(row.get('inv qty', row.get('invoice_qty', 1)) or 1)),
-                    invoice_amount=row.get('inv amount', row.get('invoice_amount', 0.0)) or 0.0,
-                    delivery_status="Pending"
-                ))
+                # 🔥 1. Database se exact Order Report fetch karo
+                order_data = OrderReport.objects.filter(order_id=order_id, asin_fsn=asin_fsn).first()
+                
+                if order_data:
+                    # 🔥 2. Excel se SIRF nayi Invoice Details lo
+                    raw_inv_date = row.get('invoice date', row.get('invoice_date', ''))
+                    invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d') if raw_inv_date else None
+                    
+                    invoice_no = str(row.get('invoice no', row.get('invoice_no', ''))).strip()
+                    seller_name = str(row.get('seller name', row.get('seller_name', ''))).strip()
+                    seller_gstn = str(row.get('seller gstn', row.get('seller_gstn', ''))).strip()
+                    invoice_qty = int(float(row.get('inv qty', row.get('invoice_qty', 1)) or 1))
+                    invoice_amount = float(row.get('inv amount', row.get('invoice_amount', 0.0)) or 0.0)
+
+                    # 🔥 3. Dono ko milakar Shipment Record banao (Unit price aur baaki sab Auto-Fill from DB)
+                    records.append(InvoiceShipment(
+                        # --- DATA COMING DIRECTLY FROM ORDER REPORTS DB ---
+                        order_id=order_data.order_id,
+                        txn_date=order_data.txn_date,
+                        firm=order_data.firm,
+                        location=order_data.location,
+                        asin_fsn=order_data.asin_fsn,
+                        model_name=order_data.model_name,
+                        model_no=order_data.model_no,
+                        unit_price=order_data.unit_price,  # <-- Ye DB se exact calculate hokar aayega
+                        
+                        # --- DATA COMING FROM EXCEL ---
+                        invoice_no=invoice_no,
+                        invoice_date=invoice_date,
+                        seller_name=seller_name,
+                        seller_gstn=seller_gstn,
+                        invoice_qty=invoice_qty,
+                        invoice_amount=invoice_amount,
+                        delivery_status="Pending"
+                    ))
             
             InvoiceShipment.objects.bulk_create(records)
             return Response({"message": f"{len(records)} Shipments uploaded successfully!"}, status=status.HTTP_201_CREATED)
@@ -364,6 +422,48 @@ class InvoiceShipmentUploadView(APIView):
 
 
 # 3. THE SMART AUTO-FETCH API
+# @api_view(['GET'])
+# def fetch_order_for_shipment(request, order_id):
+#     orders = OrderReport.objects.filter(order_id=order_id)
+    
+#     if not orders.exists():
+#         return Response({"error": "Order ID not found in database!"}, status=404)
+
+#     order_data = []
+#     for order in orders:
+#         # 🔥 Check karo ki kya is Order ID + ASIN ki entry InvoiceShipment me pehle se hai?
+#         existing_invoice = InvoiceShipment.objects.filter(order_id=order.order_id, asin_fsn=order.asin_fsn).first()
+
+#         item_data = {
+#             "order_id": order.order_id,
+#             "txn_date": order.txn_date,
+#             "firm": order.firm,
+#             "location": order.location,
+#             "asin_fsn": order.asin_fsn,
+#             "model_name": order.model_name,
+#             "model_no": order.model_no,
+#             "unit_price": order.unit_price,
+#             "order_qty": order.order_qty,
+#             "order_amount": order.order_amount,
+            
+#             # 🔥 SMART PRE-FILL: Agar invoice pehle se bana hai toh uski details bhar do, warna khali chhod do
+#             "seller_name": existing_invoice.seller_name if existing_invoice else "",
+#             "seller_gstn": existing_invoice.seller_gstn if existing_invoice else "",
+#             "invoice_no": existing_invoice.invoice_no if existing_invoice else "",
+#             "invoice_date": existing_invoice.invoice_date if existing_invoice else "",
+#             "invoice_qty": existing_invoice.invoice_qty if existing_invoice else order.order_qty,
+#             "invoice_amount": existing_invoice.invoice_amount if existing_invoice else order.order_amount,
+#             "delivery_status": existing_invoice.delivery_status if existing_invoice else "Pending",
+#             "delivery_date": existing_invoice.delivery_date if existing_invoice else "",
+            
+#             # 🔥 FRONTEND FLAG: React ko batayega ki ye row purani (Edit) hai ya nayi
+#             "is_existing": bool(existing_invoice),
+#             "shipment_id": existing_invoice.id if existing_invoice else None
+#         }
+#         order_data.append(item_data)
+        
+#     return Response(order_data, status=200)
+
 @api_view(['GET'])
 def fetch_order_for_shipment(request, order_id):
     orders = OrderReport.objects.filter(order_id=order_id)
@@ -373,7 +473,9 @@ def fetch_order_for_shipment(request, order_id):
 
     order_data = []
     for order in orders:
-        order_data.append({
+        # Puraana invoice data check karne wala logic poori tarah hata diya hai.
+        # Ab humesha fresh entry layout hi frontend ko milega.
+        item_data = {
             "order_id": order.order_id,
             "txn_date": order.txn_date,
             "firm": order.firm,
@@ -384,6 +486,99 @@ def fetch_order_for_shipment(request, order_id):
             "unit_price": order.unit_price,
             "order_qty": order.order_qty,
             "order_amount": order.order_amount,
-        })
+            
+            # HUMESHA KHALI (FRESH) FIELDS
+            "seller_name": "",
+            "seller_gstn": "",
+            "invoice_no": "",
+            "invoice_date": "",
+            "invoice_qty": order.order_qty,     # Base qty default de rahe hain par fields khali rahengi
+            "invoice_amount": order.order_amount,
+            "delivery_status": "Pending",
+            "delivery_date": "",
+            
+            # Indicator fields hamesha false/null taaki naya record hi bane
+            "is_existing": False,
+            "shipment_id": None
+        }
+        order_data.append(item_data)
         
     return Response(order_data, status=200)
+
+
+
+#-------------------VIEW Button funtionaity api --------------------
+class OrderSummaryView(APIView):
+    def get(self, request, pk):
+        try:
+            # 1. Jis row par click kiya hai, uska Order ID aur FSN nikalo
+            order = OrderReport.objects.get(id=pk)
+            target_order_id = order.order_id
+            target_asin = order.asin_fsn
+            
+            # 2. SIRF usi Order ID aur usi FSN ka data fetch karo (No Merging)
+            shipments = InvoiceShipment.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
+            inwards = InwardRecord.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
+            refunds = RefundRecord.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
+            
+            # 3. Delivered Calculations
+            delivered_shipments = shipments.filter(delivery_status='Delivered')
+            delivered_qty = delivered_shipments.aggregate(Sum('invoice_qty'))['invoice_qty__sum'] or 0
+            delivered_amount = float(delivered_shipments.aggregate(Sum('invoice_amount'))['invoice_amount__sum'] or 0.0)
+            
+            # 4. Cancelled Calculations
+            cancelled_shipments = shipments.filter(delivery_status='Cancelled')
+            cancel_qty = cancelled_shipments.aggregate(Sum('invoice_qty'))['invoice_qty__sum'] or 0
+            cancel_amount = float(cancelled_shipments.aggregate(Sum('invoice_amount'))['invoice_amount__sum'] or 0.0)
+            
+            # 5. Inward & Short Calculations
+            inward_qty = inwards.aggregate(Sum('inward_qty'))['inward_qty__sum'] or 0
+            inward_amount = float(inwards.aggregate(Sum('inward_amount'))['inward_amount__sum'] or 0.0)
+            
+            short_qty = inwards.aggregate(Sum('short_qty'))['short_qty__sum'] or 0
+            short_amount = float(inwards.aggregate(Sum('short_amount'))['short_amount__sum'] or 0.0)
+
+            # 6. Refund Calculations
+            refund_qty = refunds.aggregate(Sum('refund_qty'))['refund_qty__sum'] or 0
+            refund_amount = float(refunds.aggregate(Sum('refund_amount'))['refund_amount__sum'] or 0.0)
+
+            # 7. Pending Calculations (Single Item Formula)
+            pending_qty = order.order_qty - delivered_qty - cancel_qty
+            pending_amount = float(order.order_amount) - delivered_amount - cancel_amount
+            pending_refund_amount = cancel_amount + short_amount - refund_amount
+            
+            # 8. Status Sync (Safety ke liye)
+            calculated_status = "Complete" if pending_qty <= 0 else "Open"
+            if order.order_status != calculated_status:
+                order.order_status = calculated_status
+                order.save()
+
+            # 9. Final Response
+            summary_data = {
+                "order_id": target_order_id,
+                "txn_date": order.txn_date,
+                "asin_fsn": target_asin,
+                "model_no": order.model_no,
+                "order_qty": order.order_qty,
+                "order_amount": float(order.order_amount),
+                "order_status": calculated_status,
+                
+                "delivered_qty": delivered_qty,
+                "delivered_amount": delivered_amount,
+                "cancel_qty": cancel_qty,
+                "cancel_amount": cancel_amount,
+                "short_qty": short_qty, 
+                "short_amount": short_amount,
+                "refund_qty": refund_qty, 
+                "refund_amount": refund_amount,
+                "pending_qty": pending_qty,
+                "pending_amount": round(pending_amount, 2),
+                "pending_refund_amount": round(pending_refund_amount, 2),
+                "inward_qty": inward_qty, 
+                "inward_amount": inward_amount
+            }
+            
+            return Response(summary_data, status=200)
+            
+        except OrderReport.DoesNotExist:
+            return Response({"error": "Order not found"}, status=404)

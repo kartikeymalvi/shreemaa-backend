@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import OrderReport, Firm, Location, Merchant,ProductModel, ColumnVisibilityPolicy,InvoiceShipment
+from .models import OrderReport, Firm, Location, Merchant,ProductModel, ColumnVisibilityPolicy,InvoiceShipment,InwardRecord,RefundRecord
 
 # In sabko admin panel me dikhane ke liye register karna padta hai
 
@@ -9,6 +9,9 @@ admin.site.register(Firm)
 admin.site.register(Location)
 admin.site.register(Merchant)
 admin.site.register(ColumnVisibilityPolicy)
+# invoice shipment 
+admin.site.register(InwardRecord)
+admin.site.register(RefundRecord)
 
 
 #------------invoice-shipment--------------------------

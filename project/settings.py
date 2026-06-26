@@ -1,6 +1,3 @@
-
-
-#####----------local setup-------------------------
 # from pathlib import Path
 # from datetime import timedelta
 
@@ -113,11 +110,12 @@
 # STATIC_URL = 'static/'
 # STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-#####----------Deployemnt setup-------------------------
 
-import os
+#-------------------LIVE SETUP------------------------------------
 from pathlib import Path
 from datetime import timedelta
+import os
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -126,10 +124,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-!kg0#bb=%*6_h61(3r%3zew*li@&zonaau^64+t)!b^+)7@xvk'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-# Render par isko baad me False karna chahiye security ke liye, par demo tak True theek hai taaki errors dikh sakein.
+# Abhi test karne ke liye True rakha hai, baad me live hone ke baad False kar denge
 DEBUG = True
 
-# Live server ke liye sabhi hosts ko allow karna zaroori hai (Ya yahan Render ka exact URL likh dein)
+# 🔥 UPDATE 1: Render aur Vercel ko allow karne ke liye '*' lagaya hai
 ALLOWED_HOSTS = ['*']
 
 # Application definition
@@ -150,25 +148,21 @@ INSTALLED_APPS = [
 # Custom User Model define karna zaroori hai
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
-# --- MySQL Database Setup (Aiven Cloud - LIVE DB) ---
+# DATABASES = {
+#     'default': dj_database_url.parse('postgresql://neondb_owner:npg_Mf9L5esKdYoJ@ep-calm-brook-aoi1mr6z.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require')
+# }
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'defaultdb',       
-        'USER': 'avnadmin',        
-        'PASSWORD': 'AVNS_SXxYpGuLdYl7fQtqB85', 
-        'HOST': 'mysql-3332836a-kartikeymalvi-edf5.b.aivencloud.com',     
-        'PORT': '25633', 
-        'OPTIONS': {
-            'ssl': {'ssl_mode': 'REQUIRED'}
-        }        
-    }
+    'default': dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}", 
+        conn_max_age=600
+    )
 }
 
+# 🔥 UPDATE 3: Middleware Sequence Theek Kiya Hai (WhiteNoise hamesha Security ke baad)
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware', # Isko sabse upar rakhna best practice hai
-    'whitenoise.middleware.WhiteNoiseMiddleware', 
+    'corsheaders.middleware.CorsMiddleware', # CORS hamesha top par hona chahiye
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', # Static files ke liye
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -179,8 +173,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'project.urls'
 
-# --- CORS Settings (Live server ke liye) ---
-# Demo aur development ke liye True theek hai. Production me apne Vercel URL ko CORS_ALLOWED_ORIGINS me daalna chahiye.
+# 🔥 UPDATE 4: CORS (Vercel ke live URL se request accept karne ke liye)
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
@@ -228,9 +221,7 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
+# 🔥 UPDATE 5: Render par Static Files (CSS/JS) serve karne ka system
 STATIC_URL = 'static/'
-
-# Render/Live server ke liye static files ko collect karne ka path (WhiteNoise ke liye zaroori)
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'

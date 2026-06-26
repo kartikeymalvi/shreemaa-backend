@@ -1,4 +1,7 @@
 from django.db import models
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from django.db.models import Sum
 
 
 class OrderReport(models.Model):
@@ -38,8 +41,11 @@ class OrderReport(models.Model):
     # New Auto-calculated field
     card_offer = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
+    class Meta:
+        unique_together = ('order_id', 'asin_fsn')
+
     def __str__(self):
-        return self.order_id
+        return f"{self.order_id} - {self.asin_fsn}"
     
 
     
@@ -149,3 +155,56 @@ class InvoiceShipment(models.Model):
 
     def __str__(self):
         return f"{self.order_id} - {self.invoice_no}"
+
+
+# --- INWARD & SHORTAGE TRACKING MODEL  VIEW Button ---
+class InwardRecord(models.Model):
+    # Linking fields (Order ko pehchanne ke liye)
+    order_id = models.CharField(max_length=100)
+    asin_fsn = models.CharField(max_length=100)
+    
+    # Direct fields for Screenshot Boxes
+    short_qty = models.IntegerField(default=0)                                      # Box 11
+    short_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00) # Box 12
+    inward_qty = models.IntegerField(default=0)                                     # Box 18
+    inward_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00) # Box 19
+
+    def __str__(self):
+        return f"Order: {self.order_id} | Inward: {self.inward_qty} | Short: {self.short_qty}"
+
+
+# --- REFUND TRACKING MODEL ---
+class RefundRecord(models.Model):
+    # Linking fields (Order ko pehchanne ke liye)
+    order_id = models.CharField(max_length=100)
+    asin_fsn = models.CharField(max_length=100)
+    
+    # Direct fields for Screenshot Boxes
+    refund_qty = models.IntegerField(default=0)                                      # Box 13
+    refund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00) # Box 14
+
+    def __str__(self):
+        return f"Order: {self.order_id} | Refund Amount: ₹{self.refund_amount}"
+
+
+# 🔥 AUTO STATUS UPDATE SIGNAL
+@receiver([post_save, post_delete], sender=InvoiceShipment)
+def update_order_status_on_shipment(sender, instance, **kwargs):
+    try:
+        # Jis FSN ka shipment bana hai, uski Order row dhoondo
+        orders = OrderReport.objects.filter(order_id=instance.order_id, asin_fsn=instance.asin_fsn)
+        for order in orders:
+            shipments = InvoiceShipment.objects.filter(order_id=order.order_id, asin_fsn=order.asin_fsn)
+            
+            del_qty = shipments.filter(delivery_status='Delivered').aggregate(Sum('invoice_qty'))['invoice_qty__sum'] or 0
+            can_qty = shipments.filter(delivery_status='Cancelled').aggregate(Sum('invoice_qty'))['invoice_qty__sum'] or 0
+            
+            pending_qty = order.order_qty - del_qty - can_qty
+            new_status = "Complete" if pending_qty <= 0 else "Open"
+            
+            # Agar status badal gaya hai toh DataBase me turant save kar do
+            if order.order_status != new_status:
+                order.order_status = new_status
+                order.save()
+    except Exception as e:
+        pass

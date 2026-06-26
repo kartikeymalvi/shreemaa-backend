@@ -11,7 +11,8 @@ from .views import (
     ProductModelViewSet,
     InvoiceShipmentViewSet, 
     fetch_order_for_shipment,
-    InvoiceShipmentUploadView  # <--- Double import hata diya gaya hai
+    InvoiceShipmentUploadView,
+    OrderSummaryView
 )
 
 # Naye master routes ke liye router
@@ -37,6 +38,7 @@ urlpatterns = [
     
     #  YAHAN FIX KIYA HAI (reports/ prefix hata diya hai) 
     path('shipments/upload/', InvoiceShipmentUploadView.as_view(), name='upload_shipments'),
+    path('order-summary/<int:pk>/', OrderSummaryView.as_view(), name='order-summary'),
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
     path('', include(router.urls)),
