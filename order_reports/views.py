@@ -9,6 +9,7 @@ from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchan
 from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer
 import pandas as pd
 from django.db.models import Q
+from django.http import HttpResponse
 import math
 import datetime
 from rest_framework.pagination import PageNumberPagination
@@ -582,3 +583,79 @@ class OrderSummaryView(APIView):
             
         except OrderReport.DoesNotExist:
             return Response({"error": "Order not found"}, status=404)
+
+class ExportOrderReportsExcelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Shuruat me saara data le lo
+        queryset = OrderReport.objects.all()
+
+        # 🔥 SMART FILTERS: Frontend se aane wale filters ko catch karo
+        merchant = request.query_params.get('merchant')
+        status = request.query_params.get('order_status')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        search = request.query_params.get('search') # Agar koi search bar hai
+
+        # Filter apply karo agar value aayi hai
+        if merchant:
+            queryset = queryset.filter(merchant__icontains=merchant)
+        if status:
+            queryset = queryset.filter(order_status__iexact=status)
+        if start_date and end_date:
+            queryset = queryset.filter(txn_date__range=[start_date, end_date])
+        if search:
+            queryset = queryset.filter(order_id__icontains=search) # Ya kisi aur field me search
+
+        # Filtered data ko columns ke sath nikalna
+        data = queryset.values(
+            'order_id', 'txn_date', 'merchant', 'firm', 'location', 
+            'asin_fsn', 'model_name', 'model_no', 'order_status', 
+            'order_qty', 'order_amount'
+        )
+        
+        df = pd.DataFrame(list(data))
+        if df.empty:
+            df = pd.DataFrame(columns=['Order ID', 'Date', 'No Data Found For This Filter'])
+        else:
+            df.columns = [col.replace('_', ' ').title() for col in df.columns]
+
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename="Filtered_Order_Reports.xlsx"'
+        with pd.ExcelWriter(response, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Orders')
+
+        return response   
+class ExportInvoiceShipmentExcelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        queryset = InvoiceShipment.objects.all()
+
+        # 🔥 SMART FILTERS FOR INVOICE
+        merchant = request.query_params.get('merchant')
+        invoice_no = request.query_params.get('invoice_no')
+        
+        if merchant:
+            queryset = queryset.filter(merchant__icontains=merchant)
+        if invoice_no:
+            queryset = queryset.filter(invoice_no__icontains=invoice_no)
+
+        data = queryset.values(
+            'invoice_no', 'invoice_date', 'order_id', 'asin_fsn', 
+            'model_name', 'shipped_qty', 'invoice_amount'
+        )
+        
+        df = pd.DataFrame(list(data))
+        if df.empty:
+            df = pd.DataFrame(columns=['Invoice No', 'Date', 'No Data Found For This Filter'])
+        else:
+            df.columns = [col.replace('_', ' ').title() for col in df.columns]
+
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename="Filtered_Invoice_Shipments.xlsx"'
+        with pd.ExcelWriter(response, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Invoices')
+
+        return response         

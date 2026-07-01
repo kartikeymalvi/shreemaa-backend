@@ -12,7 +12,9 @@ from .views import (
     InvoiceShipmentViewSet, 
     fetch_order_for_shipment,
     InvoiceShipmentUploadView,
-    OrderSummaryView
+    OrderSummaryView,
+    ExportOrderReportsExcelView,
+    ExportInvoiceShipmentExcelView
 )
 
 # Naye master routes ke liye router
@@ -39,6 +41,10 @@ urlpatterns = [
     #  YAHAN FIX KIYA HAI (reports/ prefix hata diya hai) 
     path('shipments/upload/', InvoiceShipmentUploadView.as_view(), name='upload_shipments'),
     path('order-summary/<int:pk>/', OrderSummaryView.as_view(), name='order-summary'),
+
+    #excel download krne ke liye url path
+    path('export/orders/', ExportOrderReportsExcelView.as_view(), name='export-orders'),
+    path('export/invoices/', ExportInvoiceShipmentExcelView.as_view(), name='export-invoices'),
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
     path('', include(router.urls)),

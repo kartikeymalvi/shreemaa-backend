@@ -111,7 +111,8 @@
 # STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
-#-------------------LIVE SETUP------------------------------------
+# -------------------LIVE SETUP AWS ------------------------------------
+
 from pathlib import Path
 from datetime import timedelta
 import os
@@ -148,14 +149,21 @@ INSTALLED_APPS = [
 # Custom User Model define karna zaroori hai
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
-# DATABASES = {
-#     'default': dj_database_url.parse('postgresql://neondb_owner:npg_Mf9L5esKdYoJ@ep-calm-brook-aoi1mr6z.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require')
-# }
+
+
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}", 
-        conn_max_age=600
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'shreemaa_live_db',
+        'USER': 'postgres',
+        'PASSWORD': 'Kartikey9406932629',
+        'HOST': 'database-1.c5ci8uc0ye03.ap-south-1.rds.amazonaws.com',
+        'PORT': '5432',
+        'OPTIONS': {
+            'sslmode': 'require',
+        },
+    }
 }
 
 # 🔥 UPDATE 3: Middleware Sequence Theek Kiya Hai (WhiteNoise hamesha Security ke baad)
