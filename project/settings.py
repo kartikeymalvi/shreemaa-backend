@@ -126,10 +126,10 @@ SECRET_KEY = 'django-insecure-!kg0#bb=%*6_h61(3r%3zew*li@&zonaau^64+t)!b^+)7@xvk
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # Abhi test karne ke liye True rakha hai, baad me live hone ke baad False kar denge
-DEBUG = True
+DEBUG = False
 
 # 🔥 UPDATE 1: Render aur Vercel ko allow karne ke liye '*' lagaya hai
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['43.204.228.19', 'smg-erp.duckdns.org', 'localhost', '127.0.0.1']
 
 # Application definition
 INSTALLED_APPS = [
@@ -183,7 +183,15 @@ ROOT_URLCONF = 'project.urls'
 
 # 🔥 UPDATE 4: CORS (Vercel ke live URL se request accept karne ke liye)
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  
+    "http://localhost:5173",  
+    "http://127.0.0.1:5500",  
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://smg-erp.duckdns.org",
+]
 
 # DRF & JWT Settings
 REST_FRAMEWORK = {
@@ -233,3 +241,8 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+
+
+
+

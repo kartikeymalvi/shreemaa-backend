@@ -627,6 +627,12 @@ class ExportOrderReportsExcelView(APIView):
             df.to_excel(writer, index=False, sheet_name='Orders')
 
         return response   
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.http import HttpResponse
+import pandas as pd
+from .models import InvoiceShipment
+
 class ExportInvoiceShipmentExcelView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -638,13 +644,15 @@ class ExportInvoiceShipmentExcelView(APIView):
         invoice_no = request.query_params.get('invoice_no')
         
         if merchant:
-            queryset = queryset.filter(merchant__icontains=merchant)
+            # Column ka naam 'firm' hai database mein, isliye firm__icontains lagega
+            queryset = queryset.filter(firm__icontains=merchant)
+            
         if invoice_no:
             queryset = queryset.filter(invoice_no__icontains=invoice_no)
 
         data = queryset.values(
             'invoice_no', 'invoice_date', 'order_id', 'asin_fsn', 
-            'model_name', 'shipped_qty', 'invoice_amount'
+            'model_name', 'invoice_qty', 'invoice_amount'
         )
         
         df = pd.DataFrame(list(data))
@@ -655,7 +663,8 @@ class ExportInvoiceShipmentExcelView(APIView):
 
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = 'attachment; filename="Filtered_Invoice_Shipments.xlsx"'
+        
         with pd.ExcelWriter(response, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Invoices')
 
-        return response         
+        return response       
