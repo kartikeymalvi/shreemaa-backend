@@ -14,7 +14,9 @@ from .views import (
     InvoiceShipmentUploadView,
     OrderSummaryView,
     ExportOrderReportsExcelView,
-    ExportInvoiceShipmentExcelView
+    ExportInvoiceShipmentExcelView,
+    bulk_delete_orders,
+    bulk_delete_invoices
 )
 
 # Naye master routes ke liye router
@@ -28,12 +30,17 @@ router.register(r'models', ProductModelViewSet, basename='models')
 router.register(r'shipments', InvoiceShipmentViewSet, basename='shipments')
 
 urlpatterns = [
+    # bulk -delete path ---
+    path('orders/bulk-delete/', bulk_delete_orders, name='bulk-delete-orders'),
+    path('invoices/bulk-delete/', bulk_delete_invoices, name='bulk-delete-invoices'),
     #  UPLOAD WALE PATHS HAMESHA UPAR RAKHNE CHAHIYE 
     path('orders/upload/', BulkUploadExcelView.as_view(), name='orders-upload'),
     
     path('orders/', OrderReportListCreateView.as_view(), name='orders-list-create'),
     path('orders/<int:pk>/', OrderReportDetailView.as_view(), name='orders-detail'),
     path('column-policy/', ColumnVisibilityView.as_view(), name='column-policy'),
+
+    
     
     #--------------INVOICE-SHIPMENT ROUTE --------------------
     path('fetch-order/<str:order_id>/', fetch_order_for_shipment, name='fetch-order'),
@@ -45,6 +52,7 @@ urlpatterns = [
     #excel download krne ke liye url path
     path('export/orders/', ExportOrderReportsExcelView.as_view(), name='export-orders'),
     path('export/invoices/', ExportInvoiceShipmentExcelView.as_view(), name='export-invoices'),
+
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
     path('', include(router.urls)),

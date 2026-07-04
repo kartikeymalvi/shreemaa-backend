@@ -111,7 +111,7 @@
 # STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
-# -------------------LIVE SETUP AWS ------------------------------------
+# # -------------------LIVE SETUP AWS ------------------------------------
 
 from pathlib import Path
 from datetime import timedelta

@@ -1,7 +1,7 @@
 from rest_framework import generics, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view,permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
@@ -67,6 +67,122 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
 
 
 
+# class BulkUploadExcelView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request, *args, **kwargs):
+#         file = request.FILES.get('file')
+#         if not file: 
+#             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         try:
+#             if file.name.endswith('.csv'): df = pd.read_csv(file)
+#             else: df = pd.read_excel(file)
+            
+#             df = df.fillna('')
+#             df.columns = df.columns.str.strip().str.lower()
+
+#             # Master Data Arrays (Strict Match)
+#             valid_firms = set(Firm.objects.values_list('name', flat=True))
+#             valid_locations = set(Location.objects.values_list('name', flat=True))
+#             valid_merchants = set(Merchant.objects.values_list('name', flat=True))
+#             valid_asins = set(ProductModel.objects.values_list('asin_fsn', flat=True))
+#             valid_model_names = set(ProductModel.objects.values_list('model_name', flat=True))
+#             valid_model_nos = set(ProductModel.objects.values_list('model', flat=True))
+            
+#             # 🔥 FIX 1: Ab sirf Order ID nahi, balki (Order ID, ASIN) dono ka JODA (tuple) layenge
+#             existing_orders = set(OrderReport.objects.values_list('order_id', 'asin_fsn'))
+
+#             # INITIALIZE ERROR COUNTERS
+#             dup_count = 0
+#             firm_count = 0
+#             loc_count = 0
+#             merch_count = 0
+#             asin_count = 0
+#             mname_count = 0
+#             mno_count = 0
+            
+#             # 🔥 FIX 2: File ke andar duplicates rokne ke liye naya set
+#             file_order_asins = set() 
+
+#             # --- VALIDATION LOOP (Saare records check karega) ---
+#             for index, row in df.iterrows():
+#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
+#                 if not order_id: continue
+                
+#                 firm = str(row.get('firm', '')).strip()
+#                 location = str(row.get('location', '')).strip()
+#                 merchant = str(row.get('merchant', '')).strip()
+#                 asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip()
+#                 model_name = str(row.get('model name', '')).strip()
+#                 model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip()
+
+#                 # 🔥 FIX 3: Combo Check - Agar same order id aur same ASIN mila, tabhi error aayega
+#                 order_asin_combo = (order_id, asin_fsn)
+#                 if order_asin_combo in existing_orders or order_asin_combo in file_order_asins:
+#                     dup_count += 1
+#                 file_order_asins.add(order_asin_combo)
+
+#                 # Strict Master Match Checks
+#                 if firm and firm not in valid_firms: firm_count += 1
+#                 if location and location not in valid_locations: loc_count += 1
+#                 if merchant and merchant not in valid_merchants: merch_count += 1
+#                 if asin_fsn and asin_fsn not in valid_asins: asin_count += 1
+#                 if model_name and model_name not in valid_model_names: mname_count += 1
+#                 if model_no and model_no not in valid_model_nos: mno_count += 1
+
+#             # 🔥 COMPACT SUMMARY GENERATOR
+#             error_segments = []
+#             if dup_count > 0: error_segments.append(f"{dup_count} Duplicate Order+ASIN entry(s)")
+#             if firm_count > 0: error_segments.append(f"{firm_count} Firm mismatch(es)")
+#             if loc_count > 0: error_segments.append(f"{loc_count} Location mismatch(es)")
+#             if merch_count > 0: error_segments.append(f"{merch_count} Merchant mismatch(es)")
+#             if asin_count > 0: error_segments.append(f"{asin_count} ASIN/FSN mismatch(es)")
+#             if mname_count > 0: error_segments.append(f"{mname_count} Model Name mismatch(es)")
+#             if mno_count > 0: error_segments.append(f"{mno_count} Model Number mismatch(es)")
+
+#             if error_segments:
+#                 total_errors = dup_count + firm_count + loc_count + merch_count + asin_count + mname_count + mno_count
+#                 summary_msg = "Validation Failed! Found: " + ", ".join(error_segments) + f". Total {total_errors} errors. No records saved!"
+#                 return Response({"error": summary_msg}, status=status.HTTP_400_BAD_REQUEST)
+
+#             # --- SAVE LOOP (Sirf tab chalega jab 0 errors honge) ---
+#             records_to_create = []
+#             saved_count = 0
+
+#             for index, row in df.iterrows():
+#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
+#                 if not order_id: continue
+
+#                 raw_date = str(row.get('txn date', row.get('order date', '')))
+#                 txn_date = None
+#                 if raw_date:
+#                     try: txn_date = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
+#                     except: pass
+
+#                 records_to_create.append(OrderReport(
+#                     order_id=order_id, txn_date=txn_date,
+#                     month=str(row.get('month', '')).strip(), day=str(row.get('day', '')).strip(),
+#                     merchant=str(row.get('merchant', '')).strip(), merchant_id=str(row.get('merchant id', '')).strip(),
+#                     firm=str(row.get('firm', '')).strip(), location=str(row.get('location', '')).strip(),
+#                     asin_fsn=str(row.get('asin/fsn', '')).strip(), model_name=str(row.get('model name', '')).strip(),
+#                     model_no=str(row.get('model', row.get('model no', ''))).strip(), txn_detail=str(row.get('txn detail', '')).strip(),
+#                     order_status="Open",
+#                     order_qty=int(float(row.get('order qty', row.get('qty', 1)) or 1)),
+#                     order_amount=float(row.get('order amt', 0.0) or 0.0),
+#                     unit_price=float(row.get('unit price', 0.0) or 0.0),
+#                     payment_amount=float(row.get('payment amt', 0.0) or 0.0),
+#                     card_offer=float(row.get('card offer', 0.0) or 0.0)
+#                 ))
+#                 saved_count += 1
+            
+#             OrderReport.objects.bulk_create(records_to_create)
+#             return Response({"message": f"Successfully uploaded {saved_count} records!"}, status=status.HTTP_201_CREATED)
+
+#         except Exception as e:
+#             return Response({"error": f"Failed to process file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class BulkUploadExcelView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -76,9 +192,49 @@ class BulkUploadExcelView(APIView):
             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            if file.name.endswith('.csv'): df = pd.read_csv(file)
-            else: df = pd.read_excel(file)
+            if file.name.endswith('.csv'): 
+                df = pd.read_csv(file)
+            else: 
+                df = pd.read_excel(file)
             
+            # --- 🔥 NEW: EXCEL HEADER VALIDATION SHURU 🔥 ---
+            # Sheet ke raw headers ko clean karke lower case me convert kar rahe hain check karne ke liye
+            uploaded_headers = set(df.columns.str.strip().str.lower())
+            
+            # Jo headers mandatory hain unki expected list (Lowercase me safe comparison ke liye)
+            EXPECTED_HEADERS = [
+                's.no', 'order_id', 'txn date', 'month', 'day', 'txn detail', 
+                'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn', 
+                'model name', 'model', 'qty', 'order amt', 'unit price', 
+                'payment', 'card offer', 'status', 'actions'
+            ]
+            
+            missing_headers = []
+            for header in EXPECTED_HEADERS:
+                # Flexibilities handle karna jo aapke loop me nested hain (e.g. order_id vs order id)
+                if header == 'order_id' and ('order id' in uploaded_headers or 'order_id' in uploaded_headers):
+                    continue
+                if header == 'model' and ('model' in uploaded_headers or 'model no' in uploaded_headers or 'model number' in uploaded_headers):
+                    continue
+                if header == 'qty' and ('qty' in uploaded_headers or 'order qty' in uploaded_headers):
+                    continue
+                if header == 'payment' and ('payment' in uploaded_headers or 'payment amt' in uploaded_headers):
+                    continue
+                if header == 'asin/fsn' and ('asin/fsn' in uploaded_headers or 'fsn' in uploaded_headers):
+                    continue
+                if header == 'txn date' and ('txn date' in uploaded_headers or 'order date' in uploaded_headers):
+                    continue
+                
+                # Agar inme se koi bhi column na mile to error list me add karein
+                if header not in uploaded_headers:
+                    missing_headers.append(header.replace('_', ' ').title())
+
+            # Agar koi bhi header missing ya mismatched mila to turant abort kar do
+            if missing_headers:
+                error_msg = f"Excel format mismatch! Missing or incorrect columns: {', '.join(missing_headers)}. Upload aborted!"
+                return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+            # --- 🔥 EXCEL HEADER VALIDATION SAMAPT 🔥 ---
+
             df = df.fillna('')
             df.columns = df.columns.str.strip().str.lower()
 
@@ -284,7 +440,34 @@ class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
+        
         file = request.FILES.get('file')
+        # --- 🔥 INVOICE EXCEL HEADER VALIDATION 🔥 ---
+        uploaded_headers = set(df.columns.str.strip().str.lower())
+            
+            # Invoice Shipment ke mandatory headers (Aapke model ke hisaab se)
+        EXPECTED_HEADERS = [
+                'order id', 'txn date', 'firm', 'seller name', 
+                'invoice no', 'delivery status', 'delivery date'
+            ]
+            
+        missing_headers = []
+        for header in EXPECTED_HEADERS:
+                # Flexible matches
+                if header == 'order id' and ('order id' in uploaded_headers or 'order_id' in uploaded_headers): continue
+                if header == 'txn date' and ('txn date' in uploaded_headers or 'txn_date' in uploaded_headers): continue
+                if header == 'seller name' and ('seller name' in uploaded_headers or 'seller_name' in uploaded_headers): continue
+                if header == 'invoice no' and ('invoice no' in uploaded_headers or 'invoice_no' in uploaded_headers): continue
+                if header == 'delivery status' and ('delivery status' in uploaded_headers or 'delivery_status' in uploaded_headers): continue
+                if header == 'delivery date' and ('delivery date' in uploaded_headers or 'delivery_date' in uploaded_headers): continue
+                
+                if header not in uploaded_headers:
+                    missing_headers.append(header.title())
+
+        if missing_headers:
+            error_msg = f"Excel format mismatch! Missing columns: {', '.join(missing_headers)}. Upload aborted!"
+            return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+           
         if not file: return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
@@ -422,48 +605,6 @@ class InvoiceShipmentUploadView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-# 3. THE SMART AUTO-FETCH API
-# @api_view(['GET'])
-# def fetch_order_for_shipment(request, order_id):
-#     orders = OrderReport.objects.filter(order_id=order_id)
-    
-#     if not orders.exists():
-#         return Response({"error": "Order ID not found in database!"}, status=404)
-
-#     order_data = []
-#     for order in orders:
-#         # 🔥 Check karo ki kya is Order ID + ASIN ki entry InvoiceShipment me pehle se hai?
-#         existing_invoice = InvoiceShipment.objects.filter(order_id=order.order_id, asin_fsn=order.asin_fsn).first()
-
-#         item_data = {
-#             "order_id": order.order_id,
-#             "txn_date": order.txn_date,
-#             "firm": order.firm,
-#             "location": order.location,
-#             "asin_fsn": order.asin_fsn,
-#             "model_name": order.model_name,
-#             "model_no": order.model_no,
-#             "unit_price": order.unit_price,
-#             "order_qty": order.order_qty,
-#             "order_amount": order.order_amount,
-            
-#             # 🔥 SMART PRE-FILL: Agar invoice pehle se bana hai toh uski details bhar do, warna khali chhod do
-#             "seller_name": existing_invoice.seller_name if existing_invoice else "",
-#             "seller_gstn": existing_invoice.seller_gstn if existing_invoice else "",
-#             "invoice_no": existing_invoice.invoice_no if existing_invoice else "",
-#             "invoice_date": existing_invoice.invoice_date if existing_invoice else "",
-#             "invoice_qty": existing_invoice.invoice_qty if existing_invoice else order.order_qty,
-#             "invoice_amount": existing_invoice.invoice_amount if existing_invoice else order.order_amount,
-#             "delivery_status": existing_invoice.delivery_status if existing_invoice else "Pending",
-#             "delivery_date": existing_invoice.delivery_date if existing_invoice else "",
-            
-#             # 🔥 FRONTEND FLAG: React ko batayega ki ye row purani (Edit) hai ya nayi
-#             "is_existing": bool(existing_invoice),
-#             "shipment_id": existing_invoice.id if existing_invoice else None
-#         }
-#         order_data.append(item_data)
-        
-#     return Response(order_data, status=200)
 
 @api_view(['GET'])
 def fetch_order_for_shipment(request, order_id):
@@ -627,11 +768,7 @@ class ExportOrderReportsExcelView(APIView):
             df.to_excel(writer, index=False, sheet_name='Orders')
 
         return response   
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from django.http import HttpResponse
-import pandas as pd
-from .models import InvoiceShipment
+
 
 class ExportInvoiceShipmentExcelView(APIView):
     permission_classes = [IsAuthenticated]
@@ -662,9 +799,38 @@ class ExportInvoiceShipmentExcelView(APIView):
             df.columns = [col.replace('_', ' ').title() for col in df.columns]
 
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = 'attachment; filename="Filtered_Invoice_Shipments.xlsx"'
+        response['Content-Disposition'] = 'attachment; filename="Invoice_Shipments.xlsx"'
         
         with pd.ExcelWriter(response, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Invoices')
 
-        return response       
+        return response   
+
+# Bulk delete API for admin --------------
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def bulk_delete_orders(request):
+    ids_to_delete = request.data.get('ids', [])
+    if not ids_to_delete:
+        return Response({"error": "No records selected!"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        deleted_count, _ = OrderReport.objects.filter(id__in=ids_to_delete).delete()
+        return Response({"message": f"Successfully deleted {deleted_count} Order Report(s)."}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# --- BULK DELETE FOR INVOICE SHIPMENTS ---
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def bulk_delete_invoices(request):
+    ids_to_delete = request.data.get('ids', [])
+    if not ids_to_delete:
+        return Response({"error": "No records selected!"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        deleted_count, _ = InvoiceShipment.objects.filter(id__in=ids_to_delete).delete()
+        return Response({"message": f"Successfully deleted {deleted_count} Invoice Shipment(s)."}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
