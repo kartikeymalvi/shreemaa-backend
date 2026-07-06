@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view,permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel
 from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer
 import pandas as pd
 from django.db.models import Q
@@ -834,3 +834,62 @@ def bulk_delete_invoices(request):
         return Response({"message": f"Successfully deleted {deleted_count} Invoice Shipment(s)."}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
+# MODEL EXCEL UPLOAD API------------
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated]) # Sirf login wale log/admins kar sakein
+def upload_models_excel(request):
+    if 'file' not in request.FILES:
+        return Response({"error": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST)
+
+    file = request.FILES['file']
+    
+    try:
+        # Check if file is CSV or Excel
+        if file.name.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+
+        # Excel ke headers ko standardize karna (saare chote akshar, spaces ki jagah underscore)
+        # Taaki agar Excel mein 'Model Name' likha ho toh wo 'model_name' ban jaye
+        df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
+
+        success_count = 0
+        error_count = 0
+
+        # Excel ki har row (line) ko check karke save karna
+        for index, row in df.iterrows():
+            try:
+                # ASIN/FSN sabse zaroori hai, wahi unique ID hai
+                asin_fsn = str(row.get('asin_fsn') or row.get('asn_fsn') or '').strip()
+                
+                # Agar row khali hai toh skip kar do
+                if not asin_fsn or asin_fsn == 'nan':
+                    continue 
+
+                # update_or_create: Agar ASIN already hai toh baaki data update karega, nahi toh naya banayega
+                ProductModel.objects.update_or_create(
+                    asin_fsn=asin_fsn,
+                    defaults={
+                        'model_name': str(row.get('model_name', '')).strip() if pd.notna(row.get('model_name')) else "",
+                        'model': str(row.get('model', '')).strip() if pd.notna(row.get('model')) else "",
+                        'sap_polyshri': str(row.get('sap_polyshri', '')).strip() if pd.notna(row.get('sap_polyshri')) else "",
+                        'sap_rio': str(row.get('sap_rio', '')).strip() if pd.notna(row.get('sap_rio')) else "",
+                        'sap_ne': str(row.get('sap_ne', '')).strip() if pd.notna(row.get('sap_ne')) else "",
+                        'sap_sms': str(row.get('sap_sms', '')).strip() if pd.notna(row.get('sap_sms')) else "",
+                        'sap_smmpl': str(row.get('sap_smmpl', '')).strip() if pd.notna(row.get('sap_smmpl')) else "",
+                    }
+                )
+                success_count += 1
+            except Exception as row_err:
+                print(f"Error saving row {index}: {row_err}")
+                error_count += 1
+
+        return Response({
+            "message": f"Upload successful! Saved/Updated {success_count} models. Failed: {error_count}."
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(f"Excel Upload Error: {e}")
+        return Response({"error": "Failed to read the Excel file. Make sure format is correct."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)    
