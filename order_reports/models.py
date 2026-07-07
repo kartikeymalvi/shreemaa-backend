@@ -26,8 +26,8 @@ class OrderReport(models.Model):
     # Merged Field
     asin_fsn = models.CharField(max_length=100, null=True, blank=True)
     
-    model_name = models.CharField(max_length=100, null=True, blank=True)
-    model_no = models.CharField(max_length=100, null=True, blank=True)
+    model_name = models.CharField(max_length=255, null=True, blank=True)
+    model_no = models.CharField(max_length=255, null=True, blank=True)
     
     # New Field
     order_status = models.CharField(max_length=50, default="Open", null=True, blank=True)
@@ -94,7 +94,7 @@ class Firm(models.Model):
     def __str__(self): return self.name
 
 class Location(models.Model):
-    name = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=255, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     def __str__(self): return self.name
 
@@ -106,8 +106,8 @@ class Merchant(models.Model):
 class ProductModel(models.Model):
     # Required Fields
     asin_fsn = models.CharField(max_length=100, unique=True)
-    model_name = models.CharField(max_length=200)
-    model = models.CharField(max_length=100, blank=True, null=True)
+    model_name = models.CharField(max_length=255)
+    model = models.CharField(max_length=255, blank=True, null=True)
     
     # SAP CODES (blank=True rakha hai taaki user khali bhi chhod sake)
     sap_polyshri = models.CharField(max_length=100, blank=True, null=True)
