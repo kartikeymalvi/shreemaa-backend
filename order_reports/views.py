@@ -88,7 +88,7 @@ class BulkUploadExcelView(APIView):
                 's.no', 'order_id', 'txn date', 'month', 'day', 'txn detail', 
                 'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn', 
                 'model name', 'model', 'qty', 'order amt', 'unit price', 
-                'payment', 'card offer', 'status', 'actions'
+                'payment', 'card offer', 'status', 
             ]
             
             missing_headers = []
