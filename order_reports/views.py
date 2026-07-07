@@ -212,9 +212,9 @@ class BulkUploadExcelView(APIView):
                     txn_detail=str(row.get('txn detail', '')).strip(),
                     order_status="Open",
                     order_qty=int(float(row.get('order qty', row.get('qty', 1)) or 1)),
-                    order_amount=float(row.get('order amt', 0.0) or 0.0),
-                    unit_price=float(row.get('unit price', 0.0) or 0.0),
-                    payment_amount=float(row.get('payment amt', 0.0) or 0.0),
+                    order_amount=float(str(row.get('order amt', row.get('order amount', 0.0))).replace(',', '').strip() or 0.0),
+                    unit_price=float(str(row.get('unit price', 0.0)).replace(',', '').strip() or 0.0),
+                    payment_amount=float(str(row.get('payment', row.get('payment amt', 0.0))).replace(',', '').strip() or 0.0),
                     card_offer=float(row.get('card offer', 0.0) or 0.0)
                 ))
                 saved_count += 1
