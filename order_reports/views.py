@@ -203,19 +203,19 @@ class BulkUploadExcelView(APIView):
                     order_id=order_id, txn_date=txn_date,
                     month=str(row.get('month', '')).strip(), day=str(row.get('day', '')).strip(),
                     merchant=merchant_map.get(raw_merchant, ''), 
-                    merchant_id=str(row.get('merchant id', '')).strip(),
+                    merchant_id=str(row.get('merchant id', row.get('merchant_id', ''))).strip(),
                     firm=firm_map.get(raw_firm, ''), 
                     location=location_map.get(raw_location, ''),
                     asin_fsn=asin_map.get(raw_asin_fsn, ''), 
                     model_name=model_name_map.get(raw_model_name, ''),
                     model_no=model_no_map.get(raw_model_no, ''), 
-                    txn_detail=str(row.get('txn detail', '')).strip(),
+                    txn_detail=str(row.get('txn detail', row.get('txn_detail', ''))).strip(),
                     order_status="Open",
                     order_qty=int(float(row.get('order qty', row.get('qty', 1)) or 1)),
                     order_amount=float(str(row.get('order amt', row.get('order amount', 0.0))).replace(',', '').strip() or 0.0),
                     unit_price=float(str(row.get('unit price', 0.0)).replace(',', '').strip() or 0.0),
                     payment_amount=float(str(row.get('payment', row.get('payment amt', 0.0))).replace(',', '').strip() or 0.0),
-                    card_offer=float(row.get('card offer', 0.0) or 0.0)
+                    card_offer=float(str(row.get('card offer', row.get('card_offer', 0.0))).replace(',', '').strip() or 0.0)
                 ))
                 saved_count += 1
             
