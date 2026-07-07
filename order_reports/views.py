@@ -67,121 +67,6 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
 
 
 
-# class BulkUploadExcelView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, *args, **kwargs):
-#         file = request.FILES.get('file')
-#         if not file: 
-#             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         try:
-#             if file.name.endswith('.csv'): df = pd.read_csv(file)
-#             else: df = pd.read_excel(file)
-            
-#             df = df.fillna('')
-#             df.columns = df.columns.str.strip().str.lower()
-
-#             # Master Data Arrays (Strict Match)
-#             valid_firms = set(Firm.objects.values_list('name', flat=True))
-#             valid_locations = set(Location.objects.values_list('name', flat=True))
-#             valid_merchants = set(Merchant.objects.values_list('name', flat=True))
-#             valid_asins = set(ProductModel.objects.values_list('asin_fsn', flat=True))
-#             valid_model_names = set(ProductModel.objects.values_list('model_name', flat=True))
-#             valid_model_nos = set(ProductModel.objects.values_list('model', flat=True))
-            
-#             # 🔥 FIX 1: Ab sirf Order ID nahi, balki (Order ID, ASIN) dono ka JODA (tuple) layenge
-#             existing_orders = set(OrderReport.objects.values_list('order_id', 'asin_fsn'))
-
-#             # INITIALIZE ERROR COUNTERS
-#             dup_count = 0
-#             firm_count = 0
-#             loc_count = 0
-#             merch_count = 0
-#             asin_count = 0
-#             mname_count = 0
-#             mno_count = 0
-            
-#             # 🔥 FIX 2: File ke andar duplicates rokne ke liye naya set
-#             file_order_asins = set() 
-
-#             # --- VALIDATION LOOP (Saare records check karega) ---
-#             for index, row in df.iterrows():
-#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
-#                 if not order_id: continue
-                
-#                 firm = str(row.get('firm', '')).strip()
-#                 location = str(row.get('location', '')).strip()
-#                 merchant = str(row.get('merchant', '')).strip()
-#                 asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip()
-#                 model_name = str(row.get('model name', '')).strip()
-#                 model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip()
-
-#                 # 🔥 FIX 3: Combo Check - Agar same order id aur same ASIN mila, tabhi error aayega
-#                 order_asin_combo = (order_id, asin_fsn)
-#                 if order_asin_combo in existing_orders or order_asin_combo in file_order_asins:
-#                     dup_count += 1
-#                 file_order_asins.add(order_asin_combo)
-
-#                 # Strict Master Match Checks
-#                 if firm and firm not in valid_firms: firm_count += 1
-#                 if location and location not in valid_locations: loc_count += 1
-#                 if merchant and merchant not in valid_merchants: merch_count += 1
-#                 if asin_fsn and asin_fsn not in valid_asins: asin_count += 1
-#                 if model_name and model_name not in valid_model_names: mname_count += 1
-#                 if model_no and model_no not in valid_model_nos: mno_count += 1
-
-#             # 🔥 COMPACT SUMMARY GENERATOR
-#             error_segments = []
-#             if dup_count > 0: error_segments.append(f"{dup_count} Duplicate Order+ASIN entry(s)")
-#             if firm_count > 0: error_segments.append(f"{firm_count} Firm mismatch(es)")
-#             if loc_count > 0: error_segments.append(f"{loc_count} Location mismatch(es)")
-#             if merch_count > 0: error_segments.append(f"{merch_count} Merchant mismatch(es)")
-#             if asin_count > 0: error_segments.append(f"{asin_count} ASIN/FSN mismatch(es)")
-#             if mname_count > 0: error_segments.append(f"{mname_count} Model Name mismatch(es)")
-#             if mno_count > 0: error_segments.append(f"{mno_count} Model Number mismatch(es)")
-
-#             if error_segments:
-#                 total_errors = dup_count + firm_count + loc_count + merch_count + asin_count + mname_count + mno_count
-#                 summary_msg = "Validation Failed! Found: " + ", ".join(error_segments) + f". Total {total_errors} errors. No records saved!"
-#                 return Response({"error": summary_msg}, status=status.HTTP_400_BAD_REQUEST)
-
-#             # --- SAVE LOOP (Sirf tab chalega jab 0 errors honge) ---
-#             records_to_create = []
-#             saved_count = 0
-
-#             for index, row in df.iterrows():
-#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
-#                 if not order_id: continue
-
-#                 raw_date = str(row.get('txn date', row.get('order date', '')))
-#                 txn_date = None
-#                 if raw_date:
-#                     try: txn_date = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
-#                     except: pass
-
-#                 records_to_create.append(OrderReport(
-#                     order_id=order_id, txn_date=txn_date,
-#                     month=str(row.get('month', '')).strip(), day=str(row.get('day', '')).strip(),
-#                     merchant=str(row.get('merchant', '')).strip(), merchant_id=str(row.get('merchant id', '')).strip(),
-#                     firm=str(row.get('firm', '')).strip(), location=str(row.get('location', '')).strip(),
-#                     asin_fsn=str(row.get('asin/fsn', '')).strip(), model_name=str(row.get('model name', '')).strip(),
-#                     model_no=str(row.get('model', row.get('model no', ''))).strip(), txn_detail=str(row.get('txn detail', '')).strip(),
-#                     order_status="Open",
-#                     order_qty=int(float(row.get('order qty', row.get('qty', 1)) or 1)),
-#                     order_amount=float(row.get('order amt', 0.0) or 0.0),
-#                     unit_price=float(row.get('unit price', 0.0) or 0.0),
-#                     payment_amount=float(row.get('payment amt', 0.0) or 0.0),
-#                     card_offer=float(row.get('card offer', 0.0) or 0.0)
-#                 ))
-#                 saved_count += 1
-            
-#             OrderReport.objects.bulk_create(records_to_create)
-#             return Response({"message": f"Successfully uploaded {saved_count} records!"}, status=status.HTTP_201_CREATED)
-
-#         except Exception as e:
-#             return Response({"error": f"Failed to process file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
 class BulkUploadExcelView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -432,7 +317,8 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
                 Q(seller_name__icontains=search_query) |
                 Q(asin_fsn__icontains=search_query) |
                 Q(model_no__icontains=search_query) |
-                Q(seller_gstn__icontains=search_query)
+                Q(seller_gstn__icontains=search_query)|
+                Q(tracking_id__icontains=search_query)
             )    
 
         return queryset
@@ -455,7 +341,7 @@ class InvoiceShipmentUploadView(APIView):
                 
             EXPECTED_HEADERS = [
                     'order id', 'txn date', 'firm', 'seller name', 
-                    'invoice no', 'delivery status', 'delivery date'
+                    'invoice no', 'delivery status', 'delivery date','tracking id'
                 ]
                 
             missing_headers = []
@@ -466,6 +352,7 @@ class InvoiceShipmentUploadView(APIView):
                     if header == 'invoice no' and ('invoice no' in uploaded_headers or 'invoice_no' in uploaded_headers): continue
                     if header == 'delivery status' and ('delivery status' in uploaded_headers or 'delivery_status' in uploaded_headers): continue
                     if header == 'delivery date' and ('delivery date' in uploaded_headers or 'delivery_date' in uploaded_headers): continue
+                    if header == 'tracking id' and ('tracking id' in uploaded_headers or 'tracking_id' in uploaded_headers or 'awb' in uploaded_headers): continue
                     
                     if header not in uploaded_headers:
                         missing_headers.append(header.title())
@@ -575,6 +462,7 @@ class InvoiceShipmentUploadView(APIView):
                     seller_gstn = str(row.get('seller gstn', row.get('seller_gstn', ''))).strip()
                     invoice_qty = int(float(row.get('inv qty', row.get('invoice_qty', 1)) or 1))
                     invoice_amount = float(row.get('inv amount', row.get('invoice_amount', 0.0)) or 0.0)
+                    tracking_id = str(row.get('tracking id', row.get('tracking_id', row.get('awb', '')))).strip()
 
                     records.append(InvoiceShipment(
                         order_id=order_data.order_id,
@@ -591,6 +479,7 @@ class InvoiceShipmentUploadView(APIView):
                         seller_gstn=seller_gstn,
                         invoice_qty=invoice_qty,
                         invoice_amount=invoice_amount,
+                        tracking_id=tracking_id,
                         delivery_status="Pending"
                     ))
             
@@ -634,6 +523,7 @@ def fetch_order_for_shipment(request, order_id):
             "invoice_amount": order.order_amount,
             "delivery_status": "Pending",
             "delivery_date": "",
+            "tracking_id": "",
             
             # Indicator fields hamesha false/null taaki naya record hi bane
             "is_existing": False,

@@ -144,6 +144,7 @@ class InvoiceShipment(models.Model):
     invoice_date = models.DateField(null=True, blank=True)
     invoice_qty = models.IntegerField(null=True, blank=True)
     invoice_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    tracking_id = models.CharField(max_length=255, blank=True, null=True)
 
     # 3. DASHBOARD CONTROL FIELDS (Delivery Tracking)
     delivery_status = models.CharField(max_length=50, default='Pending', null=True, blank=True)
