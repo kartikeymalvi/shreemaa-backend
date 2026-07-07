@@ -328,7 +328,6 @@ class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        
         file = request.FILES.get('file')
         if not file: return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
         
@@ -336,7 +335,7 @@ class InvoiceShipmentUploadView(APIView):
             if file.name.endswith('.csv'): df = pd.read_csv(file)
             else: df = pd.read_excel(file)
             
-            # --- 🔥 INVOICE EXCEL HEADER VALIDATION 🔥 ---
+            # --- 🔥 EXCEL HEADER VALIDATION 🔥 ---
             uploaded_headers = set(df.columns.str.strip().str.lower())
                 
             EXPECTED_HEADERS = [
@@ -346,33 +345,28 @@ class InvoiceShipmentUploadView(APIView):
                 
             missing_headers = []
             for header in EXPECTED_HEADERS:
-                    if header == 'order id' and ('order id' in uploaded_headers or 'order_id' in uploaded_headers): continue
-                    if header == 'txn date' and ('txn date' in uploaded_headers or 'txn_date' in uploaded_headers): continue
-                    if header == 'seller name' and ('seller name' in uploaded_headers or 'seller_name' in uploaded_headers): continue
-                    if header == 'invoice no' and ('invoice no' in uploaded_headers or 'invoice_no' in uploaded_headers): continue
-                    if header == 'delivery status' and ('delivery status' in uploaded_headers or 'delivery_status' in uploaded_headers): continue
-                    if header == 'delivery date' and ('delivery date' in uploaded_headers or 'delivery_date' in uploaded_headers): continue
-                    if header == 'tracking id' and ('tracking id' in uploaded_headers or 'tracking_id' in uploaded_headers or 'awb' in uploaded_headers): continue
-                    
-                    if header not in uploaded_headers:
-                        missing_headers.append(header.title())
+                if header == 'order id' and any(h in uploaded_headers for h in ['order id', 'order_id']): continue
+                if header == 'txn date' and any(h in uploaded_headers for h in ['txn date', 'txn_date']): continue
+                if header == 'seller name' and any(h in uploaded_headers for h in ['seller name', 'seller_name']): continue
+                if header == 'invoice no' and any(h in uploaded_headers for h in ['invoice no', 'invoice_no']): continue
+                if header == 'delivery status' and any(h in uploaded_headers for h in ['delivery status', 'delivery_status']): continue
+                if header == 'delivery date' and any(h in uploaded_headers for h in ['delivery date', 'delivery_date']): continue
+                if header == 'tracking id' and any(h in uploaded_headers for h in ['tracking id', 'tracking_id', 'awb']): continue
+                
+                if header not in uploaded_headers:
+                    missing_headers.append(header.title())
 
             if missing_headers:
                 error_msg = f"Excel format mismatch! Missing columns: {', '.join(missing_headers)}. Upload aborted!"
                 return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
-            # --- 🔥 EXCEL HEADER VALIDATION SAMAPT 🔥 ---
 
             df = df.fillna('')
             df.columns = df.columns.str.strip().str.lower()
             
-            # 🔥 FIX: SMART CASE-INSENSITIVE MAPPING DICTIONARIES 🔥
             valid_orders = set(OrderReport.objects.values_list('order_id', flat=True))
             
-            # Maps for Master Verification
             firm_map = {f.lower(): f for f in Firm.objects.values_list('name', flat=True)}
             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
-            
-            # Maps for Models { lowercase_asin : ('Exact_Name', 'Exact_Model') }
             valid_models = {m.asin_fsn.lower(): (m.model_name, m.model) for m in ProductModel.objects.all()}
             
             existing_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
@@ -383,40 +377,52 @@ class InvoiceShipmentUploadView(APIView):
             file_invoices = set()
             file_order_items = set()
 
+            # --- 🔥 ULTRA BULLETPROOF EXTRACTORS 🔥 ---
+            def get_num(row_data, keys):
+                for k in keys:
+                    if k in row_data:
+                        val = row_data[k]
+                        if pd.notna(val) and val != '' and str(val).strip().lower() not in ['nan', 'none', 'null']:
+                            try:
+                                return float(str(val).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip())
+                            except: pass
+                return 0.0
+
+            def get_str(row_data, keys):
+                for k in keys:
+                    if k in row_data:
+                        val = row_data[k]
+                        if pd.notna(val) and str(val).strip().lower() not in ['nan', 'none', 'null', '']:
+                            return str(val).strip()
+                return ''
+
             # --- VALIDATION LOOP ---
             for index, row in df.iterrows():
-                order_id = str(row.get('order id', row.get('order_id', ''))).strip()
+                order_id = get_str(row, ['order id', 'order_id'])
                 if not order_id: continue
 
-                invoice_no = str(row.get('invoice no', row.get('invoice_no', ''))).strip()
-                
-                # Fetching raw lowercase for mapping
-                raw_asin_fsn = str(row.get('asin/fsn', row.get('asin_fsn', ''))).strip().lower()
-                raw_model_name = str(row.get('model name', '')).strip().lower()
-                raw_model_no = str(row.get('model', row.get('model no', ''))).strip().lower()
-                raw_firm = str(row.get('firm', '')).strip().lower()
-                raw_location = str(row.get('location', '')).strip().lower()
+                invoice_no = get_str(row, ['invoice no', 'invoice_no'])
+                raw_asin_fsn = get_str(row, ['asin/fsn', 'asin_fsn', 'fsn']).lower()
+                raw_model_name = get_str(row, ['model name', 'model_name']).lower()
+                raw_model_no = get_str(row, ['model', 'model no', 'model number']).lower()
+                raw_firm = get_str(row, ['firm']).lower()
+                raw_location = get_str(row, ['location']).lower()
 
-                # Get mapped values
                 asin_fsn = list(valid_models.keys())[list(valid_models.keys()).index(raw_asin_fsn)] if raw_asin_fsn in valid_models else None
                 firm = firm_map.get(raw_firm)
                 location = location_map.get(raw_location)
 
-                # 1. Order ID Exist Check
                 if order_id not in valid_orders: missing_order_count += 1
                 
-                # 2. Invoice No Unique Check
                 if not invoice_no: missing_invoice_count += 1
                 else:
                     if invoice_no in existing_invoices or invoice_no in file_invoices: dup_invoice_count += 1
                     file_invoices.add(invoice_no)
 
-                # 3. Same Order ID + Same ASIN Check
                 order_item_pair = (order_id, asin_fsn or raw_asin_fsn)
                 if order_item_pair in existing_order_items or order_item_pair in file_order_items: dup_item_in_order_count += 1
                 file_order_items.add(order_item_pair)
 
-                # 4. Master Data & Model Name/No Validation
                 if raw_firm and not firm: master_mismatch_count += 1
                 if raw_location and not location: master_mismatch_count += 1
                 
@@ -425,9 +431,8 @@ class InvoiceShipmentUploadView(APIView):
                     if raw_model_name and raw_model_name != db_model_name.lower(): master_mismatch_count += 1
                     if raw_model_no and raw_model_no != str(db_model_no).lower(): master_mismatch_count += 1
                 else:
-                    if raw_asin_fsn: master_mismatch_count += 1 # ASIN not in master
+                    if raw_asin_fsn: master_mismatch_count += 1 
 
-            # --- ERROR SUMMARY GENERATOR ---
             error_segments = []
             if missing_order_count > 0: error_segments.append(f"{missing_order_count} Order ID(s) not found in Order Reports")
             if missing_invoice_count > 0: error_segments.append(f"{missing_invoice_count} Missing Invoice No(s)")
@@ -439,31 +444,25 @@ class InvoiceShipmentUploadView(APIView):
                 total_errors = missing_order_count + missing_invoice_count + dup_invoice_count + dup_item_in_order_count + master_mismatch_count
                 return Response({"error": f"Validation Failed! Found: {', '.join(error_segments)}. Total {total_errors} errors. No records saved!"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # --- SMART SAVE LOOP (Auto-Fetch from Order Reports) ---
+            # --- SMART SAVE LOOP ---
             records = []
             for index, row in df.iterrows():
-                order_id = str(row.get('order id', row.get('order_id', ''))).strip()
-                raw_asin_fsn = str(row.get('asin/fsn', row.get('asin_fsn', ''))).strip().lower()
+                order_id = get_str(row, ['order id', 'order_id'])
+                raw_asin_fsn = get_str(row, ['asin/fsn', 'asin_fsn', 'fsn']).lower()
                 
                 if not order_id or not raw_asin_fsn: continue
                 
-                # Fetch actual ASIN from map to query DB correctly
                 asin_fsn = [k for k in valid_models.keys() if k == raw_asin_fsn][0] if raw_asin_fsn in valid_models else raw_asin_fsn
 
-                # 🔥 1. Database se exact Order Report fetch karo
                 order_data = OrderReport.objects.filter(order_id=order_id, asin_fsn__iexact=asin_fsn).first()
                 
                 if order_data:
-                    raw_inv_date = row.get('invoice date', row.get('invoice_date', ''))
-                    invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d') if raw_inv_date else None
+                    raw_inv_date = get_str(row, ['invoice date', 'invoice_date'])
+                    invoice_date = None
+                    if raw_inv_date:
+                        try: invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d')
+                        except: pass
                     
-                    invoice_no = str(row.get('invoice no', row.get('invoice_no', ''))).strip()
-                    seller_name = str(row.get('seller name', row.get('seller_name', ''))).strip()
-                    seller_gstn = str(row.get('seller gstn', row.get('seller_gstn', ''))).strip()
-                    invoice_qty = int(float(row.get('inv qty', row.get('invoice_qty', 1)) or 1))
-                    invoice_amount = float(row.get('inv amount', row.get('invoice_amount', 0.0)) or 0.0)
-                    tracking_id = str(row.get('tracking id', row.get('tracking_id', row.get('awb', '')))).strip()
-
                     records.append(InvoiceShipment(
                         order_id=order_data.order_id,
                         txn_date=order_data.txn_date,
@@ -473,13 +472,18 @@ class InvoiceShipmentUploadView(APIView):
                         model_name=order_data.model_name,
                         model_no=order_data.model_no,
                         unit_price=order_data.unit_price, 
-                        invoice_no=invoice_no,
+                        
+                        # 🔥 DATA YAHAN SE EXACT AAYEGA 🔥
+                        invoice_no=get_str(row, ['invoice no', 'invoice_no']),
                         invoice_date=invoice_date,
-                        seller_name=seller_name,
-                        seller_gstn=seller_gstn,
-                        invoice_qty=invoice_qty,
-                        invoice_amount=invoice_amount,
-                        tracking_id=tracking_id,
+                        seller_name=get_str(row, ['seller name', 'seller_name']),
+                        seller_gstn=get_str(row, ['seller gstn', 'seller_gstn']),
+                        
+                        # 🔥 NUMBER BINA CRASH HUE EXACT SAVE HONGE 🔥
+                        invoice_qty=int(get_num(row, ['inv qty', 'invoice qty', 'invoice_qty']) or 1),
+                        invoice_amount=get_num(row, ['inv amount', 'inv amt', 'invoice amount', 'invoice_amount']),
+                        tracking_id=get_str(row, ['tracking id', 'tracking_id', 'awb']),
+                        
                         delivery_status="Pending"
                     ))
             
