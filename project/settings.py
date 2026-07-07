@@ -183,8 +183,12 @@ ROOT_URLCONF = 'project.urls'
 
 # 🔥 UPDATE 4: CORS (Vercel ke live URL se request accept karne ke liye)
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOWED_ORIGINS = ['*']
-
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  
+    "http://localhost:5173",  
+    "http://127.0.0.1:5500",  
+    "https://shreemaa-frontend.vercel.app",
+]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://smg-erp.duckdns.org",
