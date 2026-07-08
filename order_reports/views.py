@@ -644,7 +644,7 @@ class ExportOrderReportsExcelView(APIView):
             'merchant', 'merchant_id', 'firm', 'location', 
             'asin_fsn', 'model_name', 'model_no', 
             'order_qty', 'order_amount', 'unit_price', 
-            'payment_amount', 'card_offer', 'status'
+            'payment_amount', 'card_offer'
         )
         
         df = pd.DataFrame(list(data))
@@ -694,7 +694,7 @@ class ExportInvoiceShipmentExcelView(APIView):
             'order_id', 'txn_date', 'firm', 'location', 'seller_name', 'seller_gstn',
             'invoice_no', 'invoice_date', 'asin_fsn', 'model_name', 'model_no',
             'invoice_qty', 'invoice_amount', 'unit_price', 'tracking_id', 
-            'delivery_date', 'delivery_status'
+            'delivery_date'
         )
         
         df = pd.DataFrame(list(data))
