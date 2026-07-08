@@ -150,8 +150,6 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
 
-
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -165,6 +163,7 @@ DATABASES = {
         },
     }
 }
+
 
 # 🔥 UPDATE 3: Middleware Sequence Theek Kiya Hai (WhiteNoise hamesha Security ke baad)
 MIDDLEWARE = [

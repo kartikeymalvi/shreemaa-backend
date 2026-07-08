@@ -443,43 +443,6 @@ class ProductModelViewSet(viewsets.ModelViewSet):
 
 #-------------------------INVOICE SHIPMENT---------------
 
-class InvoiceShipmentViewSet(viewsets.ModelViewSet):
-    serializer_class = InvoiceShipmentSerializer
-    pagination_class = StandardResultsSetPagination # (FIX: Pagination Uncomment kar diya hai)
-    
-
-    def get_queryset(self):
-        queryset = InvoiceShipment.objects.all().order_by('-id')
-        
-        start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
-        order_id = self.request.query_params.get('order_id')
-        delivery_status = self.request.query_params.get('delivery_status')
-
-        if start_date:
-            queryset = queryset.filter(txn_date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(txn_date__lte=end_date)
-        if order_id:
-            queryset = queryset.filter(order_id__icontains=order_id)
-        if delivery_status:
-            queryset = queryset.filter(delivery_status=delivery_status)
-
-        search_query = self.request.GET.get('search', '').strip()
-        if search_query:
-            queryset = queryset.filter(
-                Q(order_id__icontains=search_query) |
-                Q(invoice_no__icontains=search_query) |
-                Q(seller_name__icontains=search_query) |
-                Q(asin_fsn__icontains=search_query) |
-                Q(model_no__icontains=search_query) |
-                Q(seller_gstn__icontains=search_query)|
-                Q(tracking_id__icontains=search_query)
-            )    
-
-        return queryset
-
-# --- INVOICE SHIPMENT UPLOAD (STRICT COMBINED VALIDATION) ---
 class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -505,16 +468,11 @@ class InvoiceShipmentUploadView(APIView):
                 if header == 'txn date' and any(h in uploaded_headers for h in ['txn date', 'txn_date']): continue
                 if header == 'asin/fsn' and any(h in uploaded_headers for h in ['asin/fsn', 'asin_fsn', 'fsn']): continue
                 if header == 'seller name' and any(h in uploaded_headers for h in ['seller name', 'seller_name']): continue
-                
-                # 🚀 YEH LINE ADD KI HAI (GSTN Check):
                 if header == 'seller gstn' and any(h in uploaded_headers for h in ['seller gstn', 'seller_gstn']): continue 
-                
                 if header == 'invoice no' and any(h in uploaded_headers for h in ['invoice no', 'invoice_no']): continue
                 if header == 'invoice date' and any(h in uploaded_headers for h in ['invoice date', 'invoice_date']): continue
                 if header == 'inv qty' and any(h in uploaded_headers for h in ['inv qty', 'invoice qty', 'invoice_qty']): continue
                 if header == 'inv amount' and any(h in uploaded_headers for h in ['inv amount', 'invoice amount', 'invoice_amount']): continue
-                
-                # Tracking ID check:
                 if header == 'tracking id' and any(h in uploaded_headers for h in ['tracking id', 'tracking_id', 'awb']): continue
                 
                 if header not in uploaded_headers:
@@ -533,13 +491,12 @@ class InvoiceShipmentUploadView(APIView):
             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
             valid_models = {m.asin_fsn.lower(): (m.model_name, m.model) for m in ProductModel.objects.all()}
             
+            # 🔥 FIX: Yahan se existing_order_items hata diya hai
             existing_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
-            existing_order_items = set(InvoiceShipment.objects.values_list('order_id', 'asin_fsn'))
             
-            missing_order_count = missing_invoice_count = dup_invoice_count = dup_item_in_order_count = master_mismatch_count = 0
+            missing_order_count = missing_invoice_count = dup_invoice_count = master_mismatch_count = 0
             
             file_invoices = set()
-            file_order_items = set()
 
             # --- 🔥 ULTRA BULLETPROOF EXTRACTORS 🔥 ---
             def get_num(row_data, keys):
@@ -578,14 +535,13 @@ class InvoiceShipmentUploadView(APIView):
 
                 if order_id not in valid_orders: missing_order_count += 1
                 
+                # 🔥 STRICT INVOICE UNIQUE CHECK (Order ID ki chhut chhaiye par Invoice unique hona chahiye) 🔥
                 if not invoice_no: missing_invoice_count += 1
                 else:
                     if invoice_no in existing_invoices or invoice_no in file_invoices: dup_invoice_count += 1
                     file_invoices.add(invoice_no)
 
-                order_item_pair = (order_id, asin_fsn or raw_asin_fsn)
-                if order_item_pair in existing_order_items or order_item_pair in file_order_items: dup_item_in_order_count += 1
-                file_order_items.add(order_item_pair)
+                # 🔥 FIX: Yahan se Order Item Pair ka duplicate logic delete kar diya gaya hai 🔥
 
                 if raw_firm and not firm: master_mismatch_count += 1
                 if raw_location and not location: master_mismatch_count += 1
@@ -601,11 +557,10 @@ class InvoiceShipmentUploadView(APIView):
             if missing_order_count > 0: error_segments.append(f"{missing_order_count} Order ID(s) not found in Order Reports")
             if missing_invoice_count > 0: error_segments.append(f"{missing_invoice_count} Missing Invoice No(s)")
             if dup_invoice_count > 0: error_segments.append(f"{dup_invoice_count} Duplicate Invoice No(s)")
-            if dup_item_in_order_count > 0: error_segments.append(f"{dup_item_in_order_count} Duplicate Item(s) in same Order ID")
             if master_mismatch_count > 0: error_segments.append(f"{master_mismatch_count} Master/Model mismatch(es)")
 
             if error_segments:
-                total_errors = missing_order_count + missing_invoice_count + dup_invoice_count + dup_item_in_order_count + master_mismatch_count
+                total_errors = missing_order_count + missing_invoice_count + dup_invoice_count + master_mismatch_count
                 return Response({"error": f"Validation Failed! Found: {', '.join(error_segments)}. Total {total_errors} errors. No records saved!"}, status=status.HTTP_400_BAD_REQUEST)
 
             # --- SMART SAVE LOOP ---
@@ -637,13 +592,11 @@ class InvoiceShipmentUploadView(APIView):
                         model_no=order_data.model_no,
                         unit_price=order_data.unit_price, 
                         
-                        # 🔥 DATA YAHAN SE EXACT AAYEGA 🔥
                         invoice_no=get_str(row, ['invoice no', 'invoice_no']),
                         invoice_date=invoice_date,
                         seller_name=get_str(row, ['seller name', 'seller_name']),
                         seller_gstn=get_str(row, ['seller gstn', 'seller_gstn']),
                         
-                        # 🔥 NUMBER BINA CRASH HUE EXACT SAVE HONGE 🔥
                         invoice_qty=int(get_num(row, ['inv qty', 'invoice qty', 'invoice_qty']) or 1),
                         invoice_amount=get_num(row, ['inv amount', 'inv amt', 'invoice amount', 'invoice_amount']),
                         tracking_id=get_str(row, ['tracking id', 'tracking_id', 'awb']),
