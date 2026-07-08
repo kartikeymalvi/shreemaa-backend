@@ -67,164 +67,319 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
 
 
 
+# class BulkUploadExcelView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request, *args, **kwargs):
+#         file = request.FILES.get('file')
+#         if not file: 
+#             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         try:
+#             if file.name.endswith('.csv'): 
+#                 df = pd.read_csv(file)
+#             else: 
+#                 df = pd.read_excel(file)
+            
+#             # --- 🔥 EXCEL HEADER VALIDATION SHURU 🔥 ---
+#             uploaded_headers = set(df.columns.str.strip().str.lower())
+            
+#             EXPECTED_HEADERS = [
+#                 's.no', 'order_id', 'txn date', 'month', 'day', 'txn detail', 
+#                 'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn', 
+#                 'model name', 'model', 'qty', 'order amt', 'unit price', 
+#                 'payment', 'card offer', 'status', 
+#             ]
+            
+#             missing_headers = []
+#             for header in EXPECTED_HEADERS:
+#                 if header == 'order_id' and ('order id' in uploaded_headers or 'order_id' in uploaded_headers): continue
+#                 if header == 'model' and ('model' in uploaded_headers or 'model no' in uploaded_headers or 'model number' in uploaded_headers): continue
+#                 if header == 'qty' and ('qty' in uploaded_headers or 'order qty' in uploaded_headers): continue
+#                 if header == 'payment' and ('payment' in uploaded_headers or 'payment amt' in uploaded_headers): continue
+#                 if header == 'asin/fsn' and ('asin/fsn' in uploaded_headers or 'fsn' in uploaded_headers): continue
+#                 if header == 'txn date' and ('txn date' in uploaded_headers or 'order date' in uploaded_headers): continue
+#                 if header == 'merchant_id' and ('merchant id' in uploaded_headers or 'merchant_id' in uploaded_headers): continue
+                
+#                 if header not in uploaded_headers:
+#                     missing_headers.append(header.replace('_', ' ').title())
+
+#             if missing_headers:
+#                 error_msg = f"Excel format mismatch! Missing or incorrect columns: {', '.join(missing_headers)}. Upload aborted!"
+#                 return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
+#             # --- 🔥 EXCEL HEADER VALIDATION SAMAPT 🔥 ---
+
+#             df = df.fillna('')
+#             df.columns = df.columns.str.strip().str.lower()
+
+#             # 🔥 FIX: SMART CASE-INSENSITIVE MAPPING DICTIONARIES 🔥
+#             # Map banayenge jahan KEY hogi lowercase (bhopal) aur VALUE hogi Master format (BHOPAL)
+#             firm_map = {f.lower(): f for f in Firm.objects.values_list('name', flat=True)}
+#             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
+#             merchant_map = {m.lower(): m for m in Merchant.objects.values_list('name', flat=True)}
+            
+#             # Models ke liye multiple maps banenge
+#             asin_map = {m.asin_fsn.lower(): m.asin_fsn for m in ProductModel.objects.all()}
+#             model_name_map = {m.model_name.lower(): m.model_name for m in ProductModel.objects.all()}
+#             model_no_map = {m.model.lower(): m.model for m in ProductModel.objects.all() if m.model}
+
+#             # Combo sets for fast duplicate checking
+#             existing_orders = set(OrderReport.objects.values_list('order_id', 'asin_fsn'))
+
+#             dup_count = firm_count = loc_count = merch_count = asin_count = mname_count = mno_count = 0
+#             file_order_asins = set() 
+
+#             # --- VALIDATION LOOP ---
+#             for index, row in df.iterrows():
+#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
+#                 if not order_id: continue
+                
+#                 raw_firm = str(row.get('firm', '')).strip().lower()
+#                 raw_location = str(row.get('location', '')).strip().lower()
+#                 raw_merchant = str(row.get('merchant', '')).strip().lower()
+#                 raw_asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip().lower()
+#                 raw_model_name = str(row.get('model name', '')).strip().lower()
+#                 raw_model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip().lower()
+
+#                 # Get actual mapped values (agar mapped hai toh)
+#                 firm = firm_map.get(raw_firm)
+#                 location = location_map.get(raw_location)
+#                 merchant = merchant_map.get(raw_merchant)
+#                 asin_fsn = asin_map.get(raw_asin_fsn)
+#                 model_name = model_name_map.get(raw_model_name)
+#                 model_no = model_no_map.get(raw_model_no) if raw_model_no else ""
+
+#                 # Duplicates Check
+#                 order_asin_combo = (order_id, asin_fsn or raw_asin_fsn) # fallback to raw if not in master yet
+#                 if order_asin_combo in existing_orders or order_asin_combo in file_order_asins:
+#                     dup_count += 1
+#                 file_order_asins.add(order_asin_combo)
+
+#                 # Strict Master Match Checks (Agar map se data nahi mila matlab Master mein nahi hai)
+#                 if raw_firm and not firm: firm_count += 1
+#                 if raw_location and not location: loc_count += 1
+#                 if raw_merchant and not merchant: merch_count += 1
+#                 if raw_asin_fsn and not asin_fsn: asin_count += 1
+#                 if raw_model_name and not model_name: mname_count += 1
+#                 if raw_model_no and not model_no: mno_count += 1
+
+#             # --- ERROR SUMMARY GENERATOR ---
+#             error_segments = []
+#             if dup_count > 0: error_segments.append(f"{dup_count} Duplicate Order+ASIN entry(s)")
+#             if firm_count > 0: error_segments.append(f"{firm_count} Firm mismatch(es)")
+#             if loc_count > 0: error_segments.append(f"{loc_count} Location mismatch(es)")
+#             if merch_count > 0: error_segments.append(f"{merch_count} Merchant mismatch(es)")
+#             if asin_count > 0: error_segments.append(f"{asin_count} ASIN/FSN mismatch(es)")
+#             if mname_count > 0: error_segments.append(f"{mname_count} Model Name mismatch(es)")
+#             if mno_count > 0: error_segments.append(f"{mno_count} Model Number mismatch(es)")
+
+#             if error_segments:
+#                 total_errors = dup_count + firm_count + loc_count + merch_count + asin_count + mname_count + mno_count
+#                 summary_msg = "Validation Failed! Found: " + ", ".join(error_segments) + f". Total {total_errors} errors. No records saved!"
+#                 return Response({"error": summary_msg}, status=status.HTTP_400_BAD_REQUEST)
+
+#             # --- SAVE LOOP (Sirf tab chalega jab 0 errors honge) ---
+#             records_to_create = []
+#             saved_count = 0
+
+#             for index, row in df.iterrows():
+#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
+#                 if not order_id: continue
+
+#                 raw_date = str(row.get('txn date', row.get('order date', '')))
+#                 txn_date = None
+#                 if raw_date:
+#                     try: txn_date = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
+#                     except: pass
+
+#                 # Mapping from dict again for saving exact master format
+#                 raw_firm = str(row.get('firm', '')).strip().lower()
+#                 raw_location = str(row.get('location', '')).strip().lower()
+#                 raw_merchant = str(row.get('merchant', '')).strip().lower()
+#                 raw_asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip().lower()
+#                 raw_model_name = str(row.get('model name', '')).strip().lower()
+#                 raw_model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip().lower()
+
+#                 records_to_create.append(OrderReport(
+#                     order_id=order_id, txn_date=txn_date,
+#                     month=str(row.get('month', '')).strip(), day=str(row.get('day', '')).strip(),
+#                     merchant=merchant_map.get(raw_merchant, ''), 
+#                     merchant_id=str(row.get('merchant id', row.get('merchant_id', ''))).strip(),
+#                     firm=firm_map.get(raw_firm, ''), 
+#                     location=location_map.get(raw_location, ''),
+#                     asin_fsn=asin_map.get(raw_asin_fsn, ''), 
+#                     model_name=model_name_map.get(raw_model_name, ''),
+#                     model_no=model_no_map.get(raw_model_no, ''), 
+#                     txn_detail=str(row.get('txn detail', row.get('txn_detail', ''))).strip(),
+#                     order_status="Open",
+#                     order_qty=int(float(row.get('order qty', row.get('qty', 1)) or 1)),
+#                     order_amount=float(str(row.get('order amt', row.get('order amount', 0.0))).replace(',', '').strip() or 0.0),
+#                     unit_price=float(str(row.get('unit price', 0.0)).replace(',', '').strip() or 0.0),
+#                     payment_amount=float(str(row.get('payment', row.get('payment amt', 0.0))).replace(',', '').strip() or 0.0),
+#                     card_offer=float(str(row.get('card offer', row.get('card_offer', 0.0))).replace(',', '').strip() or 0.0)
+#                 ))
+#                 saved_count += 1
+            
+#             OrderReport.objects.bulk_create(records_to_create)
+#             return Response({"message": f"Successfully uploaded {saved_count} records!"}, status=status.HTTP_201_CREATED)
+
+#         except Exception as e:
+#             return Response({"error": f"Failed to process file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
 class BulkUploadExcelView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get('file')
-        if not file: 
-            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+        if not file: return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            if file.name.endswith('.csv'): 
-                df = pd.read_csv(file)
-            else: 
-                df = pd.read_excel(file)
-            
-            # --- 🔥 EXCEL HEADER VALIDATION SHURU 🔥 ---
+            if file.name.endswith('.csv'): df = pd.read_csv(file)
+            else: df = pd.read_excel(file)
+
+            # --- 🔥 HEADER VALIDATION ---
             uploaded_headers = set(df.columns.str.strip().str.lower())
-            
             EXPECTED_HEADERS = [
-                's.no', 'order_id', 'txn date', 'month', 'day', 'txn detail', 
-                'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn', 
-                'model name', 'model', 'qty', 'order amt', 'unit price', 
-                'payment', 'card offer', 'status', 
+                'order_id', 'txn date', 'month', 'day', 'txn detail',
+                'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn',
+                'model name', 'model', 'qty', 'order amt', 'unit price',
+                'payment', 'card offer'
             ]
-            
+
             missing_headers = []
             for header in EXPECTED_HEADERS:
-                if header == 'order_id' and ('order id' in uploaded_headers or 'order_id' in uploaded_headers): continue
-                if header == 'model' and ('model' in uploaded_headers or 'model no' in uploaded_headers or 'model number' in uploaded_headers): continue
-                if header == 'qty' and ('qty' in uploaded_headers or 'order qty' in uploaded_headers): continue
-                if header == 'payment' and ('payment' in uploaded_headers or 'payment amt' in uploaded_headers): continue
-                if header == 'asin/fsn' and ('asin/fsn' in uploaded_headers or 'fsn' in uploaded_headers): continue
-                if header == 'txn date' and ('txn date' in uploaded_headers or 'order date' in uploaded_headers): continue
-                if header == 'merchant_id' and ('merchant id' in uploaded_headers or 'merchant_id' in uploaded_headers): continue
-                
-                if header not in uploaded_headers:
+                if header == 'order_id' and any(h in uploaded_headers for h in ['order id', 'order_id']): continue
+                if header == 'merchant_id' and any(h in uploaded_headers for h in ['merchant id', 'merchant_id']): continue
+                if header == 'model' and any(h in uploaded_headers for h in ['model', 'model no', 'model number']): continue
+                if header == 'qty' and any(h in uploaded_headers for h in ['qty', 'order qty']): continue
+                if header == 'payment' and any(h in uploaded_headers for h in ['payment', 'payment amt']): continue
+                if header == 'asin/fsn' and any(h in uploaded_headers for h in ['asin/fsn', 'fsn', 'asin_fsn']): continue
+                if header == 'txn date' and any(h in uploaded_headers for h in ['txn date', 'order date']): continue
+
+                if header not in uploaded_headers and header != 's.no':
                     missing_headers.append(header.replace('_', ' ').title())
 
             if missing_headers:
-                error_msg = f"Excel format mismatch! Missing or incorrect columns: {', '.join(missing_headers)}. Upload aborted!"
-                return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
-            # --- 🔥 EXCEL HEADER VALIDATION SAMAPT 🔥 ---
+                return Response({"error": f"Excel format mismatch! Missing columns: {', '.join(missing_headers)}. Upload aborted!"}, status=status.HTTP_400_BAD_REQUEST)
 
             df = df.fillna('')
             df.columns = df.columns.str.strip().str.lower()
 
-            # 🔥 FIX: SMART CASE-INSENSITIVE MAPPING DICTIONARIES 🔥
-            # Map banayenge jahan KEY hogi lowercase (bhopal) aur VALUE hogi Master format (BHOPAL)
+            # --- 🔥 BULLETPROOF EXTRACTORS 🔥 ---
+            def get_num(row_data, keys):
+                for k in keys:
+                    if k in row_data:
+                        val = row_data[k]
+                        if pd.notna(val) and val != '' and str(val).strip().lower() not in ['nan', 'none', 'null']:
+                            try: return float(str(val).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip())
+                            except: pass
+                return 0.0
+
+            def get_str(row_data, keys):
+                for k in keys:
+                    if k in row_data:
+                        val = row_data[k]
+                        if pd.notna(val) and str(val).strip().lower() not in ['nan', 'none', 'null', '']:
+                            return str(val).strip()
+                return ''
+
+            # --- 🔥 SMART MASTER MAPPING (ASIN DRIVEN) 🔥 ---
             firm_map = {f.lower(): f for f in Firm.objects.values_list('name', flat=True)}
             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
             merchant_map = {m.lower(): m for m in Merchant.objects.values_list('name', flat=True)}
-            
-            # Models ke liye multiple maps banenge
-            asin_map = {m.asin_fsn.lower(): m.asin_fsn for m in ProductModel.objects.all()}
-            model_name_map = {m.model_name.lower(): m.model_name for m in ProductModel.objects.all()}
-            model_no_map = {m.model.lower(): m.model for m in ProductModel.objects.all() if m.model}
 
-            # Combo sets for fast duplicate checking
+            # Yahan hum strictly Model Name text match karne ki jagah, ASIN ko key banayenge
+            master_products = {m.asin_fsn.lower(): m for m in ProductModel.objects.all()}
             existing_orders = set(OrderReport.objects.values_list('order_id', 'asin_fsn'))
 
-            dup_count = firm_count = loc_count = merch_count = asin_count = mname_count = mno_count = 0
-            file_order_asins = set() 
+            dup_count = firm_count = loc_count = merch_count = asin_count = 0
+            file_order_asins = set()
 
             # --- VALIDATION LOOP ---
             for index, row in df.iterrows():
-                order_id = str(row.get('order id', row.get('order_id', ''))).strip()
+                order_id = get_str(row, ['order id', 'order_id'])
                 if not order_id: continue
-                
-                raw_firm = str(row.get('firm', '')).strip().lower()
-                raw_location = str(row.get('location', '')).strip().lower()
-                raw_merchant = str(row.get('merchant', '')).strip().lower()
-                raw_asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip().lower()
-                raw_model_name = str(row.get('model name', '')).strip().lower()
-                raw_model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip().lower()
 
-                # Get actual mapped values (agar mapped hai toh)
-                firm = firm_map.get(raw_firm)
-                location = location_map.get(raw_location)
-                merchant = merchant_map.get(raw_merchant)
-                asin_fsn = asin_map.get(raw_asin_fsn)
-                model_name = model_name_map.get(raw_model_name)
-                model_no = model_no_map.get(raw_model_no) if raw_model_no else ""
+                raw_firm = get_str(row, ['firm']).lower()
+                raw_location = get_str(row, ['location']).lower()
+                raw_merchant = get_str(row, ['merchant']).lower()
+                raw_asin_fsn = get_str(row, ['asin/fsn', 'fsn', 'asin_fsn']).lower()
 
                 # Duplicates Check
-                order_asin_combo = (order_id, asin_fsn or raw_asin_fsn) # fallback to raw if not in master yet
+                asin_to_check = master_products[raw_asin_fsn].asin_fsn if raw_asin_fsn in master_products else raw_asin_fsn
+                order_asin_combo = (order_id, asin_to_check)
                 if order_asin_combo in existing_orders or order_asin_combo in file_order_asins:
                     dup_count += 1
                 file_order_asins.add(order_asin_combo)
 
-                # Strict Master Match Checks (Agar map se data nahi mila matlab Master mein nahi hai)
-                if raw_firm and not firm: firm_count += 1
-                if raw_location and not location: loc_count += 1
-                if raw_merchant and not merchant: merch_count += 1
-                if raw_asin_fsn and not asin_fsn: asin_count += 1
-                if raw_model_name and not model_name: mname_count += 1
-                if raw_model_no and not model_no: mno_count += 1
+                # Strict Master Checks (Lekin Model Name/No text check hata diya gaya hai)
+                if raw_firm and raw_firm not in firm_map: firm_count += 1
+                if raw_location and raw_location not in location_map: loc_count += 1
+                if raw_merchant and raw_merchant not in merchant_map: merch_count += 1
+                if raw_asin_fsn and raw_asin_fsn not in master_products: asin_count += 1
 
-            # --- ERROR SUMMARY GENERATOR ---
             error_segments = []
             if dup_count > 0: error_segments.append(f"{dup_count} Duplicate Order+ASIN entry(s)")
             if firm_count > 0: error_segments.append(f"{firm_count} Firm mismatch(es)")
             if loc_count > 0: error_segments.append(f"{loc_count} Location mismatch(es)")
             if merch_count > 0: error_segments.append(f"{merch_count} Merchant mismatch(es)")
-            if asin_count > 0: error_segments.append(f"{asin_count} ASIN/FSN mismatch(es)")
-            if mname_count > 0: error_segments.append(f"{mname_count} Model Name mismatch(es)")
-            if mno_count > 0: error_segments.append(f"{mno_count} Model Number mismatch(es)")
+            if asin_count > 0: error_segments.append(f"{asin_count} ASIN/FSN not found in Master")
 
             if error_segments:
-                total_errors = dup_count + firm_count + loc_count + merch_count + asin_count + mname_count + mno_count
-                summary_msg = "Validation Failed! Found: " + ", ".join(error_segments) + f". Total {total_errors} errors. No records saved!"
-                return Response({"error": summary_msg}, status=status.HTTP_400_BAD_REQUEST)
+                total_errors = dup_count + firm_count + loc_count + merch_count + asin_count
+                return Response({"error": "Validation Failed! Found: " + ", ".join(error_segments) + f". Total {total_errors} errors. No records saved!"}, status=status.HTTP_400_BAD_REQUEST)
 
-            # --- SAVE LOOP (Sirf tab chalega jab 0 errors honge) ---
+            # --- SMART SAVE LOOP ---
             records_to_create = []
-            saved_count = 0
-
             for index, row in df.iterrows():
-                order_id = str(row.get('order id', row.get('order_id', ''))).strip()
+                order_id = get_str(row, ['order id', 'order_id'])
                 if not order_id: continue
 
-                raw_date = str(row.get('txn date', row.get('order date', '')))
+                raw_date = get_str(row, ['txn date', 'order date'])
                 txn_date = None
                 if raw_date:
                     try: txn_date = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
                     except: pass
 
-                # Mapping from dict again for saving exact master format
-                raw_firm = str(row.get('firm', '')).strip().lower()
-                raw_location = str(row.get('location', '')).strip().lower()
-                raw_merchant = str(row.get('merchant', '')).strip().lower()
-                raw_asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip().lower()
-                raw_model_name = str(row.get('model name', '')).strip().lower()
-                raw_model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip().lower()
+                raw_firm = get_str(row, ['firm']).lower()
+                raw_location = get_str(row, ['location']).lower()
+                raw_merchant = get_str(row, ['merchant']).lower()
+                raw_asin_fsn = get_str(row, ['asin/fsn', 'fsn', 'asin_fsn']).lower()
+
+                # 🔥 AUTO-FETCH FROM MASTER 🔥 (Excel name ignore karega, Master db wala hi daalega)
+                master_item = master_products.get(raw_asin_fsn)
+                final_asin = master_item.asin_fsn if master_item else get_str(row, ['asin/fsn', 'fsn'])
+                final_model_name = master_item.model_name if master_item else get_str(row, ['model name'])
+                final_model_no = master_item.model if master_item else get_str(row, ['model', 'model no'])
 
                 records_to_create.append(OrderReport(
                     order_id=order_id, txn_date=txn_date,
-                    month=str(row.get('month', '')).strip(), day=str(row.get('day', '')).strip(),
-                    merchant=merchant_map.get(raw_merchant, ''), 
-                    merchant_id=str(row.get('merchant id', row.get('merchant_id', ''))).strip(),
-                    firm=firm_map.get(raw_firm, ''), 
+                    month=get_str(row, ['month']), day=get_str(row, ['day']),
+                    merchant=merchant_map.get(raw_merchant, ''),
+                    merchant_id=get_str(row, ['merchant id', 'merchant_id']),
+                    firm=firm_map.get(raw_firm, ''),
                     location=location_map.get(raw_location, ''),
-                    asin_fsn=asin_map.get(raw_asin_fsn, ''), 
-                    model_name=model_name_map.get(raw_model_name, ''),
-                    model_no=model_no_map.get(raw_model_no, ''), 
-                    txn_detail=str(row.get('txn detail', row.get('txn_detail', ''))).strip(),
-                    order_status="Open",
-                    order_qty=int(float(row.get('order qty', row.get('qty', 1)) or 1)),
-                    order_amount=float(str(row.get('order amt', row.get('order amount', 0.0))).replace(',', '').strip() or 0.0),
-                    unit_price=float(str(row.get('unit price', 0.0)).replace(',', '').strip() or 0.0),
-                    payment_amount=float(str(row.get('payment', row.get('payment amt', 0.0))).replace(',', '').strip() or 0.0),
-                    card_offer=float(str(row.get('card offer', row.get('card_offer', 0.0))).replace(',', '').strip() or 0.0)
+                    
+                    # Exact Master format details assign ho rahe hain
+                    asin_fsn=final_asin,
+                    model_name=final_model_name,
+                    model_no=final_model_no,
+                    
+                    txn_detail=get_str(row, ['txn detail', 'txn_detail']),
+                    status=get_str(row, ['status']) or "Open",
+                    order_qty=int(get_num(row, ['order qty', 'qty']) or 1),
+                    order_amount=get_num(row, ['order amt', 'order amount']),
+                    unit_price=get_num(row, ['unit price', 'unit_price']),
+                    payment_amount=get_num(row, ['payment', 'payment amt']),
+                    card_offer=get_num(row, ['card offer', 'card_offer'])
                 ))
-                saved_count += 1
-            
+
             OrderReport.objects.bulk_create(records_to_create)
-            return Response({"message": f"Successfully uploaded {saved_count} records!"}, status=status.HTTP_201_CREATED)
+            return Response({"message": f"Successfully uploaded {len(records_to_create)} records!"}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({"error": f"Failed to process file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
 
 # Nayi API View: Edit aur Delete ke liye
 class OrderReportDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -747,7 +902,8 @@ def bulk_delete_invoices(request):
         deleted_count, _ = InvoiceShipment.objects.filter(id__in=ids_to_delete).delete()
         return Response({"message": f"Successfully deleted {deleted_count} Invoice Shipment(s)."}, status=status.HTTP_200_OK)
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)        
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+          
 # MODEL EXCEL UPLOAD API------------
 
 @api_view(['POST'])
