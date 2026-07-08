@@ -443,6 +443,42 @@ class ProductModelViewSet(viewsets.ModelViewSet):
 
 #-------------------------INVOICE SHIPMENT---------------
 
+class InvoiceShipmentViewSet(viewsets.ModelViewSet):
+    serializer_class = InvoiceShipmentSerializer
+    pagination_class = StandardResultsSetPagination # (FIX: Pagination Uncomment kar diya hai)
+    
+
+    def get_queryset(self):
+        queryset = InvoiceShipment.objects.all().order_by('-id')
+        
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+        order_id = self.request.query_params.get('order_id')
+        delivery_status = self.request.query_params.get('delivery_status')
+
+        if start_date:
+            queryset = queryset.filter(txn_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(txn_date__lte=end_date)
+        if order_id:
+            queryset = queryset.filter(order_id__icontains=order_id)
+        if delivery_status:
+            queryset = queryset.filter(delivery_status=delivery_status)
+
+        search_query = self.request.GET.get('search', '').strip()
+        if search_query:
+            queryset = queryset.filter(
+                Q(order_id__icontains=search_query) |
+                Q(invoice_no__icontains=search_query) |
+                Q(seller_name__icontains=search_query) |
+                Q(asin_fsn__icontains=search_query) |
+                Q(model_no__icontains=search_query) |
+                Q(seller_gstn__icontains=search_query)|
+                Q(tracking_id__icontains=search_query)
+            )    
+
+        return queryset
+
 class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
