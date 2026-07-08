@@ -243,7 +243,7 @@ class BulkUploadExcelView(APIView):
                 'order_id', 'txn date', 'month', 'day', 'txn detail',
                 'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn',
                 'model name', 'model', 'qty', 'order amt', 'unit price',
-                'payment', 'card offer'
+                'payment', 'card offer', 'status',
             ]
 
             missing_headers = []
@@ -366,7 +366,7 @@ class BulkUploadExcelView(APIView):
                     model_no=final_model_no,
                     
                     txn_detail=get_str(row, ['txn detail', 'txn_detail']),
-                    status=get_str(row, ['status']) or "Open",
+                    order_status=get_str(row, ['status']) or "Open",
                     order_qty=int(get_num(row, ['order qty', 'qty']) or 1),
                     order_amount=get_num(row, ['order amt', 'order amount']),
                     unit_price=get_num(row, ['unit price', 'unit_price']),
