@@ -495,18 +495,26 @@ class InvoiceShipmentUploadView(APIView):
             uploaded_headers = set(df.columns.str.strip().str.lower())
                 
             EXPECTED_HEADERS = [
-                    'order id', 'txn date', 'firm', 'seller name', 
-                    'invoice no', 'delivery status', 'delivery date','tracking id'
+                    'order id', 'txn date', 'firm', 'asin/fsn', 'seller name', 'seller gstn',
+                    'invoice no', 'invoice date', 'inv qty', 'inv amount', 'tracking id'
                 ]
                 
             missing_headers = []
             for header in EXPECTED_HEADERS:
                 if header == 'order id' and any(h in uploaded_headers for h in ['order id', 'order_id']): continue
                 if header == 'txn date' and any(h in uploaded_headers for h in ['txn date', 'txn_date']): continue
+                if header == 'asin/fsn' and any(h in uploaded_headers for h in ['asin/fsn', 'asin_fsn', 'fsn']): continue
                 if header == 'seller name' and any(h in uploaded_headers for h in ['seller name', 'seller_name']): continue
+                
+                # 🚀 YEH LINE ADD KI HAI (GSTN Check):
+                if header == 'seller gstn' and any(h in uploaded_headers for h in ['seller gstn', 'seller_gstn']): continue 
+                
                 if header == 'invoice no' and any(h in uploaded_headers for h in ['invoice no', 'invoice_no']): continue
-                if header == 'delivery status' and any(h in uploaded_headers for h in ['delivery status', 'delivery_status']): continue
-                if header == 'delivery date' and any(h in uploaded_headers for h in ['delivery date', 'delivery_date']): continue
+                if header == 'invoice date' and any(h in uploaded_headers for h in ['invoice date', 'invoice_date']): continue
+                if header == 'inv qty' and any(h in uploaded_headers for h in ['inv qty', 'invoice qty', 'invoice_qty']): continue
+                if header == 'inv amount' and any(h in uploaded_headers for h in ['inv amount', 'invoice amount', 'invoice_amount']): continue
+                
+                # Tracking ID check:
                 if header == 'tracking id' and any(h in uploaded_headers for h in ['tracking id', 'tracking_id', 'awb']): continue
                 
                 if header not in uploaded_headers:
