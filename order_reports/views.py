@@ -99,6 +99,7 @@ class BulkUploadExcelView(APIView):
                 if header == 'payment' and ('payment' in uploaded_headers or 'payment amt' in uploaded_headers): continue
                 if header == 'asin/fsn' and ('asin/fsn' in uploaded_headers or 'fsn' in uploaded_headers): continue
                 if header == 'txn date' and ('txn date' in uploaded_headers or 'order date' in uploaded_headers): continue
+                if header == 'merchant_id' and ('merchant id' in uploaded_headers or 'merchant_id' in uploaded_headers): continue
                 
                 if header not in uploaded_headers:
                     missing_headers.append(header.replace('_', ' ').title())
@@ -614,46 +615,59 @@ class OrderSummaryView(APIView):
             
         except OrderReport.DoesNotExist:
             return Response({"error": "Order not found"}, status=404)
+        
 
 class ExportOrderReportsExcelView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Shuruat me saara data le lo
         queryset = OrderReport.objects.all()
 
-        # 🔥 SMART FILTERS: Frontend se aane wale filters ko catch karo
+        # 🔥 SMART FILTERS
         merchant = request.query_params.get('merchant')
-        status = request.query_params.get('order_status')
+        status_val = request.query_params.get('order_status') 
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
-        search = request.query_params.get('search') # Agar koi search bar hai
+        search = request.query_params.get('search') 
 
-        # Filter apply karo agar value aayi hai
         if merchant:
             queryset = queryset.filter(merchant__icontains=merchant)
-        if status:
-            queryset = queryset.filter(order_status__iexact=status)
+        if status_val:
+            queryset = queryset.filter(status__iexact=status_val)
         if start_date and end_date:
             queryset = queryset.filter(txn_date__range=[start_date, end_date])
         if search:
-            queryset = queryset.filter(order_id__icontains=search) # Ya kisi aur field me search
+            queryset = queryset.filter(order_id__icontains=search) 
 
-        # Filtered data ko columns ke sath nikalna
         data = queryset.values(
-            'order_id', 'txn_date', 'merchant', 'firm', 'location', 
-            'asin_fsn', 'model_name', 'model_no', 'order_status', 
-            'order_qty', 'order_amount'
+            'order_id', 'txn_date', 'month', 'day', 'txn_detail', 
+            'merchant', 'merchant_id', 'firm', 'location', 
+            'asin_fsn', 'model_name', 'model_no', 
+            'order_qty', 'order_amount', 'unit_price', 
+            'payment_amount', 'card_offer', 'status'
         )
         
         df = pd.DataFrame(list(data))
         if df.empty:
-            df = pd.DataFrame(columns=['Order ID', 'Date', 'No Data Found For This Filter'])
+            df = pd.DataFrame(columns=['S.No', 'Order ID', 'Date', 'No Data Found For This Filter'])
         else:
-            df.columns = [col.replace('_', ' ').title() for col in df.columns]
+            # 🔥 MAGIC: Sabse pehle column (index 0) par S.No add karna (1, 2, 3...)
+            df.insert(0, 'S.No', range(1, len(df) + 1))
+            
+            # Columns ko clean format me convert karna
+            df.columns = [col.replace('_', ' ').title() if col != 'S.No' else col for col in df.columns]
+            
+            # Names ko waisa banana jaisa upload template mein hai
+            df.rename(columns={
+                'Asin Fsn': 'ASIN/FSN',
+                'Payment Amount': 'Payment',
+                'Order Qty': 'Qty',
+                'Order Amount': 'Order Amt'
+            }, inplace=True)
 
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = 'attachment; filename="Filtered_Order_Reports.xlsx"'
+        
         with pd.ExcelWriter(response, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Orders')
 
@@ -671,22 +685,32 @@ class ExportInvoiceShipmentExcelView(APIView):
         invoice_no = request.query_params.get('invoice_no')
         
         if merchant:
-            # Column ka naam 'firm' hai database mein, isliye firm__icontains lagega
             queryset = queryset.filter(firm__icontains=merchant)
             
         if invoice_no:
             queryset = queryset.filter(invoice_no__icontains=invoice_no)
 
         data = queryset.values(
-            'invoice_no', 'invoice_date', 'order_id', 'asin_fsn', 
-            'model_name', 'invoice_qty', 'invoice_amount'
+            'order_id', 'txn_date', 'firm', 'location', 'seller_name', 'seller_gstn',
+            'invoice_no', 'invoice_date', 'asin_fsn', 'model_name', 'model_no',
+            'invoice_qty', 'invoice_amount', 'unit_price', 'tracking_id', 
+            'delivery_date', 'delivery_status'
         )
         
         df = pd.DataFrame(list(data))
         if df.empty:
-            df = pd.DataFrame(columns=['Invoice No', 'Date', 'No Data Found For This Filter'])
+            df = pd.DataFrame(columns=['S.No', 'Invoice No', 'Date', 'No Data Found For This Filter'])
         else:
-            df.columns = [col.replace('_', ' ').title() for col in df.columns]
+            # 🔥 MAGIC: Sabse pehle column (index 0) par S.No add karna (1, 2, 3...)
+            df.insert(0, 'S.No', range(1, len(df) + 1))
+            
+            # Underscores hata kar proper title case banana (e.g., invoice_no -> Invoice No)
+            df.columns = [col.replace('_', ' ').title() if col != 'S.No' else col for col in df.columns]
+            
+            df.rename(columns={
+                'Asin Fsn': 'ASIN/FSN',
+                'Txn Date': 'Txn Date',
+            }, inplace=True)
 
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         response['Content-Disposition'] = 'attachment; filename="Invoice_Shipments.xlsx"'
