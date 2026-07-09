@@ -96,20 +96,19 @@ class ApprovalItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['approval'] # Ye backend khud set karega
 
 class ApprovalRequestSerializer(serializers.ModelSerializer):
-    items = ApprovalItemSerializer(many=True) # Items array accept karne ke liye
+    items = ApprovalItemSerializer(many=True) 
 
-    # GET api me Dropdown ke names dikhane ke liye
-    firm_name = serializers.CharField(source='firm.name', read_only=True)
-    bill_location_name = serializers.CharField(source='bill_location.name', read_only=True)
-    ship_location_name = serializers.CharField(source='ship_location.name', read_only=True)
-    merchant_name = serializers.CharField(source='merchant.name', read_only=True)
+    # 🔥 FIX 1: 'source' ki jagah SerializerMethodField use kiya taaki Null data par Server Crash (500) na ho!
+    firm_detail = serializers.SerializerMethodField()
+    bill_location_detail = serializers.SerializerMethodField()
+    ship_location_detail = serializers.SerializerMethodField()
+    merchant_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovalRequest
         fields = '__all__'
         read_only_fields = ['approval_no', 'requested_by', 'status', 'authorized_by']
         
-        # 🔥 YEH LINE ADD KAREIN: Taaki agar ID string '1' ki jagah number 1 aaye toh error na aaye
         extra_kwargs = {
             'firm': {'required': False, 'allow_null': True},
             'merchant': {'required': False, 'allow_null': True},
@@ -117,10 +116,24 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
             'ship_location': {'required': False, 'allow_null': True},
         }
 
-    # Custom Create Logic (Master + Multiple Items Ek Sath Save)
+    # 🔥 SAFE GETTERS: Agar data nahi hai toh crash karne ki jagah None bhejega
+    def get_firm_detail(self, obj):
+        return {"name": obj.firm.name} if obj.firm else None
+        
+    def get_bill_location_detail(self, obj):
+        return {"name": obj.bill_location.name} if obj.bill_location else None
+        
+    def get_ship_location_detail(self, obj):
+        return {"name": obj.ship_location.name} if obj.ship_location else None
+        
+    def get_merchant_detail(self, obj):
+        return {"name": obj.merchant.name} if obj.merchant else None
+
+    # Custom Create Logic 
     @transaction.atomic
     def create(self, validated_data):
-        items_data = validated_data.pop('items')
+        # 🔥 FIX 2: [] lagaya taaki agar items khali aaye toh KeyError se crash na ho
+        items_data = validated_data.pop('items', []) 
         approval = ApprovalRequest.objects.create(**validated_data)
         
         for item_data in items_data:
