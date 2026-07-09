@@ -26,8 +26,8 @@ router = DefaultRouter()
 router.register(r'firms', FirmViewSet)
 router.register(r'locations', LocationViewSet)
 router.register(r'merchants', MerchantViewSet)
-router.register(r'models', ProductModelViewSet, basename='models')
-router.register(r'sellers', SellerViewSet)
+router.register(r'models', ProductModelViewSet, basename='productmodel')
+router.register(r'sellers', SellerViewSet, basename='seller')
 
 #--------------INVOICE-SHIPMENT ROUTE --------------------
 router.register(r'shipments', InvoiceShipmentViewSet, basename='shipments')
