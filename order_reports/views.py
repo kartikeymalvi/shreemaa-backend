@@ -6,7 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer
 import pandas as pd
 from rest_framework.decorators import action
 from django.db.models import Q
@@ -927,7 +927,6 @@ def upload_models_excel(request):
         return Response({"error": "Failed to read the Excel file. Make sure format is correct."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
       
 # APPROVAL VIEWSET ------------------
-
 class ApprovalViewSet(viewsets.ModelViewSet):
     serializer_class = ApprovalRequestSerializer
     permission_classes = [IsAuthenticated]
@@ -937,6 +936,21 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         if self.request.user.role == 'ADMIN':
             return ApprovalRequest.objects.all().order_by('-id')
         return ApprovalRequest.objects.filter(requested_by=self.request.user.username).order_by('-id')
+
+    # 🔥 YEH FUNCTION MISSING THA: Iske bina Frontend ke dropdowns khali rahenge
+    @action(detail=False, methods=['get'])
+    def dropdown_data(self, request):
+        firms = Firm.objects.all()
+        locations = Location.objects.all()
+        merchants = Merchant.objects.all()
+        models = ProductModel.objects.all()
+        
+        return Response({
+            'firms': FirmDropdownSerializer(firms, many=True).data,
+            'locations': LocationDropdownSerializer(locations, many=True).data,
+            'merchants': MerchantDropdownSerializer(merchants, many=True).data,
+            'models': ModelDropdownSerializer(models, many=True).data,
+        })
 
     def perform_create(self, serializer):
         # 1. 🔥 SEQUENCE GENERATOR LOGIC (ORD/SMG/00001)
@@ -981,4 +995,4 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         approval.status = 'Rejected'
         approval.authorized_by = request.user.username
         approval.save()
-        return Response({"message": "Approval Request Rejected!"}, status=status.HTTP_200_OK)     
+        return Response({"message": "Approval Request Rejected!"}, status=status.HTTP_200_OK)

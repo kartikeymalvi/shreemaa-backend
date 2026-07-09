@@ -119,3 +119,23 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
             ApprovalItem.objects.create(approval=approval, **item_data)
             
         return approval
+    
+class FirmDropdownSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Firm
+        fields = ['id', 'name']
+
+class LocationDropdownSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Location
+        fields = ['id', 'name']
+
+class MerchantDropdownSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = Merchant
+        fields = ['id', 'name']
+
+class ModelDropdownSerializer(serializers.ModelSerializer):
+    class Meta: 
+        model = ProductModel
+        fields = ['id', 'asin_fsn', 'model_name', 'model']    
