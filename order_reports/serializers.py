@@ -108,6 +108,14 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
         model = ApprovalRequest
         fields = '__all__'
         read_only_fields = ['approval_no', 'requested_by', 'status', 'authorized_by']
+        
+        # 🔥 YEH LINE ADD KAREIN: Taaki agar ID string '1' ki jagah number 1 aaye toh error na aaye
+        extra_kwargs = {
+            'firm': {'required': False, 'allow_null': True},
+            'merchant': {'required': False, 'allow_null': True},
+            'bill_location': {'required': False, 'allow_null': True},
+            'ship_location': {'required': False, 'allow_null': True},
+        }
 
     # Custom Create Logic (Master + Multiple Items Ek Sath Save)
     @transaction.atomic

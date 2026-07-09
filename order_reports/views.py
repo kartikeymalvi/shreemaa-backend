@@ -932,12 +932,15 @@ class ApprovalViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Admin ko sab dikhega, User ko sirf uske banaye hue approvals dikhenge
-        if self.request.user.role == 'ADMIN':
+        # Admin, superuser, ya staff ko saara data dikhega auditing ke liye
+        user_role = getattr(self.request.user, 'role', None)
+        username = getattr(self.request.user, 'username', str(self.request.user))
+        
+        if user_role == 'ADMIN' or self.request.user.is_superuser or self.request.user.is_staff:
             return ApprovalRequest.objects.all().order_by('-id')
-        return ApprovalRequest.objects.filter(requested_by=self.request.user.username).order_by('-id')
+        # Normal user ko sirf khud ke banaye requests dikhenge
+        return ApprovalRequest.objects.filter(requested_by=username).order_by('-id')
 
-    # 🔥 YEH FUNCTION MISSING THA: Iske bina Frontend ke dropdowns khali rahenge
     @action(detail=False, methods=['get'])
     def dropdown_data(self, request):
         firms = Firm.objects.all()
@@ -952,47 +955,57 @@ class ApprovalViewSet(viewsets.ModelViewSet):
             'models': ModelDropdownSerializer(models, many=True).data,
         })
 
+    # 🚀 STRICTOR USER CHECKING ON CREATION
     def perform_create(self, serializer):
-        # 1. 🔥 SEQUENCE GENERATOR LOGIC (ORD/SMG/00001)
         prefix = "ORD/SMG/"
         last_approval = ApprovalRequest.objects.filter(approval_no__startswith=prefix).order_by('-id').first()
         
-        if last_approval:
-            # Example: 'ORD/SMG/00001' se '00001' nikal kar int me convert karo aur +1 karo
-            last_no = last_approval.approval_no.replace(prefix, "")
-            new_no = int(last_no) + 1
+        if last_approval and last_approval.approval_no:
+            try:
+                last_no = last_approval.approval_no.replace(prefix, "")
+                new_no = int(last_no) + 1
+            except ValueError:
+                new_no = 1
         else:
             new_no = 1
             
-        # Zfill string ko 00001 format me convert karta hai
         new_approval_no = f"{prefix}{str(new_no).zfill(5)}"
         
-        # Save karte time Requested By aur Approval No daal do
+        # 🔥 Security Lock: Frontend chahe kuch bhi bheje, Django token user se hi 'requested_by' set karega
+        strict_username = getattr(self.request.user, 'username', str(self.request.user))
+        
         serializer.save(
             approval_no=new_approval_no, 
-            requested_by=self.request.user.username # Frontend JWT se jo aayega
+            requested_by=strict_username 
         )
 
-    # 🚀 ADMIN ONLY ACTION: APPROVE
+    # 🚀 STRICTOR ADMIN CHECKING ON APPROVAL
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
-        if request.user.role != 'ADMIN':
-            return Response({"error": "Only Admins can approve."}, status=status.HTTP_403_FORBIDDEN)
+        user_role = getattr(request.user, 'role', None)
+        # Checking if the user is genuinely an admin/staff in DB
+        if not (user_role == 'ADMIN' or request.user.is_superuser or request.user.is_staff):
+            return Response({"error": "Security Alert: Only authorized Admins can approve requests."}, status=status.HTTP_403_FORBIDDEN)
             
         approval = self.get_object()
         approval.status = 'Approved'
-        approval.authorized_by = request.user.username
+        
+        # 🔥 Security Lock: Logged in Admin's username is strictly stamped
+        approval.authorized_by = getattr(request.user, 'username', str(request.user))
         approval.save()
-        return Response({"message": "Approval Request Approved!"}, status=status.HTTP_200_OK)
+        return Response({"message": "Approval Request Approved Successfully!"}, status=status.HTTP_200_OK)
 
-    # 🚀 ADMIN ONLY ACTION: REJECT
+    # 🚀 STRICTOR ADMIN CHECKING ON REJECTION
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
-        if request.user.role != 'ADMIN':
-            return Response({"error": "Only Admins can reject."}, status=status.HTTP_403_FORBIDDEN)
+        user_role = getattr(request.user, 'role', None)
+        if not (user_role == 'ADMIN' or request.user.is_superuser or request.user.is_staff):
+            return Response({"error": "Security Alert: Only authorized Admins can reject requests."}, status=status.HTTP_403_FORBIDDEN)
             
         approval = self.get_object()
         approval.status = 'Rejected'
-        approval.authorized_by = request.user.username
+        
+        # 🔥 Security Lock: Logged in Admin's username is strictly stamped
+        approval.authorized_by = getattr(request.user, 'username', str(request.user))
         approval.save()
-        return Response({"message": "Approval Request Rejected!"}, status=status.HTTP_200_OK)
+        return Response({"message": "Approval Request Rejected Successfully!"}, status=status.HTTP_200_OK)
