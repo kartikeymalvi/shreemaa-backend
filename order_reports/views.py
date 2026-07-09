@@ -5,8 +5,8 @@ from rest_framework.decorators import api_view,permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller 
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer
 import pandas as pd
 from django.db.models import Q
 from django.http import HttpResponse
@@ -63,168 +63,6 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
             )
 
         return queryset
-
-
-
-
-# class BulkUploadExcelView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, *args, **kwargs):
-#         file = request.FILES.get('file')
-#         if not file: 
-#             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         try:
-#             if file.name.endswith('.csv'): 
-#                 df = pd.read_csv(file)
-#             else: 
-#                 df = pd.read_excel(file)
-            
-#             # --- 🔥 EXCEL HEADER VALIDATION SHURU 🔥 ---
-#             uploaded_headers = set(df.columns.str.strip().str.lower())
-            
-#             EXPECTED_HEADERS = [
-#                 's.no', 'order_id', 'txn date', 'month', 'day', 'txn detail', 
-#                 'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn', 
-#                 'model name', 'model', 'qty', 'order amt', 'unit price', 
-#                 'payment', 'card offer', 'status', 
-#             ]
-            
-#             missing_headers = []
-#             for header in EXPECTED_HEADERS:
-#                 if header == 'order_id' and ('order id' in uploaded_headers or 'order_id' in uploaded_headers): continue
-#                 if header == 'model' and ('model' in uploaded_headers or 'model no' in uploaded_headers or 'model number' in uploaded_headers): continue
-#                 if header == 'qty' and ('qty' in uploaded_headers or 'order qty' in uploaded_headers): continue
-#                 if header == 'payment' and ('payment' in uploaded_headers or 'payment amt' in uploaded_headers): continue
-#                 if header == 'asin/fsn' and ('asin/fsn' in uploaded_headers or 'fsn' in uploaded_headers): continue
-#                 if header == 'txn date' and ('txn date' in uploaded_headers or 'order date' in uploaded_headers): continue
-#                 if header == 'merchant_id' and ('merchant id' in uploaded_headers or 'merchant_id' in uploaded_headers): continue
-                
-#                 if header not in uploaded_headers:
-#                     missing_headers.append(header.replace('_', ' ').title())
-
-#             if missing_headers:
-#                 error_msg = f"Excel format mismatch! Missing or incorrect columns: {', '.join(missing_headers)}. Upload aborted!"
-#                 return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
-#             # --- 🔥 EXCEL HEADER VALIDATION SAMAPT 🔥 ---
-
-#             df = df.fillna('')
-#             df.columns = df.columns.str.strip().str.lower()
-
-#             # 🔥 FIX: SMART CASE-INSENSITIVE MAPPING DICTIONARIES 🔥
-#             # Map banayenge jahan KEY hogi lowercase (bhopal) aur VALUE hogi Master format (BHOPAL)
-#             firm_map = {f.lower(): f for f in Firm.objects.values_list('name', flat=True)}
-#             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
-#             merchant_map = {m.lower(): m for m in Merchant.objects.values_list('name', flat=True)}
-            
-#             # Models ke liye multiple maps banenge
-#             asin_map = {m.asin_fsn.lower(): m.asin_fsn for m in ProductModel.objects.all()}
-#             model_name_map = {m.model_name.lower(): m.model_name for m in ProductModel.objects.all()}
-#             model_no_map = {m.model.lower(): m.model for m in ProductModel.objects.all() if m.model}
-
-#             # Combo sets for fast duplicate checking
-#             existing_orders = set(OrderReport.objects.values_list('order_id', 'asin_fsn'))
-
-#             dup_count = firm_count = loc_count = merch_count = asin_count = mname_count = mno_count = 0
-#             file_order_asins = set() 
-
-#             # --- VALIDATION LOOP ---
-#             for index, row in df.iterrows():
-#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
-#                 if not order_id: continue
-                
-#                 raw_firm = str(row.get('firm', '')).strip().lower()
-#                 raw_location = str(row.get('location', '')).strip().lower()
-#                 raw_merchant = str(row.get('merchant', '')).strip().lower()
-#                 raw_asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip().lower()
-#                 raw_model_name = str(row.get('model name', '')).strip().lower()
-#                 raw_model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip().lower()
-
-#                 # Get actual mapped values (agar mapped hai toh)
-#                 firm = firm_map.get(raw_firm)
-#                 location = location_map.get(raw_location)
-#                 merchant = merchant_map.get(raw_merchant)
-#                 asin_fsn = asin_map.get(raw_asin_fsn)
-#                 model_name = model_name_map.get(raw_model_name)
-#                 model_no = model_no_map.get(raw_model_no) if raw_model_no else ""
-
-#                 # Duplicates Check
-#                 order_asin_combo = (order_id, asin_fsn or raw_asin_fsn) # fallback to raw if not in master yet
-#                 if order_asin_combo in existing_orders or order_asin_combo in file_order_asins:
-#                     dup_count += 1
-#                 file_order_asins.add(order_asin_combo)
-
-#                 # Strict Master Match Checks (Agar map se data nahi mila matlab Master mein nahi hai)
-#                 if raw_firm and not firm: firm_count += 1
-#                 if raw_location and not location: loc_count += 1
-#                 if raw_merchant and not merchant: merch_count += 1
-#                 if raw_asin_fsn and not asin_fsn: asin_count += 1
-#                 if raw_model_name and not model_name: mname_count += 1
-#                 if raw_model_no and not model_no: mno_count += 1
-
-#             # --- ERROR SUMMARY GENERATOR ---
-#             error_segments = []
-#             if dup_count > 0: error_segments.append(f"{dup_count} Duplicate Order+ASIN entry(s)")
-#             if firm_count > 0: error_segments.append(f"{firm_count} Firm mismatch(es)")
-#             if loc_count > 0: error_segments.append(f"{loc_count} Location mismatch(es)")
-#             if merch_count > 0: error_segments.append(f"{merch_count} Merchant mismatch(es)")
-#             if asin_count > 0: error_segments.append(f"{asin_count} ASIN/FSN mismatch(es)")
-#             if mname_count > 0: error_segments.append(f"{mname_count} Model Name mismatch(es)")
-#             if mno_count > 0: error_segments.append(f"{mno_count} Model Number mismatch(es)")
-
-#             if error_segments:
-#                 total_errors = dup_count + firm_count + loc_count + merch_count + asin_count + mname_count + mno_count
-#                 summary_msg = "Validation Failed! Found: " + ", ".join(error_segments) + f". Total {total_errors} errors. No records saved!"
-#                 return Response({"error": summary_msg}, status=status.HTTP_400_BAD_REQUEST)
-
-#             # --- SAVE LOOP (Sirf tab chalega jab 0 errors honge) ---
-#             records_to_create = []
-#             saved_count = 0
-
-#             for index, row in df.iterrows():
-#                 order_id = str(row.get('order id', row.get('order_id', ''))).strip()
-#                 if not order_id: continue
-
-#                 raw_date = str(row.get('txn date', row.get('order date', '')))
-#                 txn_date = None
-#                 if raw_date:
-#                     try: txn_date = pd.to_datetime(raw_date, dayfirst=True).strftime('%Y-%m-%d')
-#                     except: pass
-
-#                 # Mapping from dict again for saving exact master format
-#                 raw_firm = str(row.get('firm', '')).strip().lower()
-#                 raw_location = str(row.get('location', '')).strip().lower()
-#                 raw_merchant = str(row.get('merchant', '')).strip().lower()
-#                 raw_asin_fsn = str(row.get('asin/fsn', row.get('fsn', ''))).strip().lower()
-#                 raw_model_name = str(row.get('model name', '')).strip().lower()
-#                 raw_model_no = str(row.get('model', row.get('model no', row.get('model number', '')))).strip().lower()
-
-#                 records_to_create.append(OrderReport(
-#                     order_id=order_id, txn_date=txn_date,
-#                     month=str(row.get('month', '')).strip(), day=str(row.get('day', '')).strip(),
-#                     merchant=merchant_map.get(raw_merchant, ''), 
-#                     merchant_id=str(row.get('merchant id', row.get('merchant_id', ''))).strip(),
-#                     firm=firm_map.get(raw_firm, ''), 
-#                     location=location_map.get(raw_location, ''),
-#                     asin_fsn=asin_map.get(raw_asin_fsn, ''), 
-#                     model_name=model_name_map.get(raw_model_name, ''),
-#                     model_no=model_no_map.get(raw_model_no, ''), 
-#                     txn_detail=str(row.get('txn detail', row.get('txn_detail', ''))).strip(),
-#                     order_status="Open",
-#                     order_qty=int(float(row.get('order qty', row.get('qty', 1)) or 1)),
-#                     order_amount=float(str(row.get('order amt', row.get('order amount', 0.0))).replace(',', '').strip() or 0.0),
-#                     unit_price=float(str(row.get('unit price', 0.0)).replace(',', '').strip() or 0.0),
-#                     payment_amount=float(str(row.get('payment', row.get('payment amt', 0.0))).replace(',', '').strip() or 0.0),
-#                     card_offer=float(str(row.get('card offer', row.get('card_offer', 0.0))).replace(',', '').strip() or 0.0)
-#                 ))
-#                 saved_count += 1
-            
-#             OrderReport.objects.bulk_create(records_to_create)
-#             return Response({"message": f"Successfully uploaded {saved_count} records!"}, status=status.HTTP_201_CREATED)
-
-#         except Exception as e:
-#             return Response({"error": f"Failed to process file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 class BulkUploadExcelView(APIView):
     permission_classes = [IsAuthenticated]
@@ -437,9 +275,71 @@ class MerchantViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]    
 
 class ProductModelViewSet(viewsets.ModelViewSet):
-    queryset = ProductModel.objects.all().order_by('-id')
-    serializer_class = ProductModelSerializer              
+    serializer_class = ProductModelSerializer
+    permission_classes = [IsAuthenticated]
+    # pagination_class = StandardResultsSetPagination
 
+    def get_queryset(self):
+        queryset = ProductModel.objects.all().order_by('-id')
+        
+        # URL se Filters get karna
+        asin_fsn = self.request.query_params.get('asin_fsn')
+        model_name = self.request.query_params.get('model_name')
+        model_val = self.request.query_params.get('model')
+        
+        # 🔥 GLOBAL SEARCH PARAMETER
+        search_query = self.request.query_params.get('search')
+
+        if asin_fsn: queryset = queryset.filter(asin_fsn__icontains=asin_fsn)
+        if model_name: queryset = queryset.filter(model_name__icontains=model_name)
+        if model_val: queryset = queryset.filter(model__icontains=model_val)
+
+        # 🔥 GLOBAL SEARCH LOGIC (Kisi bhi column me search karega)
+        if search_query:
+            queryset = queryset.filter(
+                Q(asin_fsn__icontains=search_query) |
+                Q(model_name__icontains=search_query) |
+                Q(model__icontains=search_query) |
+                Q(sap_polyshri__icontains=search_query) |
+                Q(sap_rio__icontains=search_query) |
+                Q(sap_ne__icontains=search_query) |
+                Q(sap_sms__icontains=search_query) |
+                Q(sap_smmpl__icontains=search_query)
+            )
+
+        return queryset             
+
+class SellerViewSet(viewsets.ModelViewSet):
+    serializer_class = SellerSerializer
+    permission_classes = [IsAuthenticated]
+    # pagination_class = StandardResultsSetPagination  # Agar inme bhi pagination chalani hai toh uncomment karein
+
+    def get_queryset(self):
+        queryset = Seller.objects.all().order_by('-id')
+        
+        # URL se Filters get karna
+        name = self.request.query_params.get('name')
+        gstn_no = self.request.query_params.get('gstn_no')
+        
+        # 🔥 GLOBAL SEARCH PARAMETER
+        search_query = self.request.query_params.get('search')
+
+        if name: queryset = queryset.filter(name__icontains=name)
+        if gstn_no: queryset = queryset.filter(gstn_no__icontains=gstn_no)
+
+        # 🔥 GLOBAL SEARCH LOGIC (Kisi bhi column me search karega)
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(gstn_no__icontains=search_query) |
+                Q(sap_polyshri__icontains=search_query) |
+                Q(sap_rio__icontains=search_query) |
+                Q(sap_ne__icontains=search_query) |
+                Q(sap_sms__icontains=search_query) |
+                Q(sap_smmpl__icontains=search_query)
+            )
+
+        return queryset
 
 #-------------------------INVOICE SHIPMENT---------------
 

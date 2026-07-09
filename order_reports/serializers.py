@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller
 
 class OrderReportSerializer(serializers.ModelSerializer):
     class Meta:
@@ -54,7 +54,10 @@ class ProductModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductModel
         fields = '__all__'    
-                
+class SellerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Seller
+        fields = '__all__'                
 # -------------------------INVOICE SHIPMENT---------------------------------------
 
        

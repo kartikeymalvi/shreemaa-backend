@@ -9,6 +9,7 @@ from .views import (
     LocationViewSet, 
     MerchantViewSet, 
     ProductModelViewSet,
+    SellerViewSet,
     InvoiceShipmentViewSet, 
     fetch_order_for_shipment,
     InvoiceShipmentUploadView,
@@ -26,6 +27,7 @@ router.register(r'firms', FirmViewSet)
 router.register(r'locations', LocationViewSet)
 router.register(r'merchants', MerchantViewSet)
 router.register(r'models', ProductModelViewSet, basename='models')
+router.register(r'sellers', SellerViewSet)
 
 #--------------INVOICE-SHIPMENT ROUTE --------------------
 router.register(r'shipments', InvoiceShipmentViewSet, basename='shipments')

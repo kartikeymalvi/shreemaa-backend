@@ -118,7 +118,18 @@ class ProductModel(models.Model):
 
     # Jab database me entry dekhenge toh is naam se dikhegi
     def __str__(self):
-        return f"{self.asin_fsn} - {self.model_name}"    
+        return f"{self.asin_fsn} - {self.model_name}"
+class Seller(models.Model):
+    gstn_no = models.CharField(max_length=15, unique=True)
+    name = models.CharField(max_length=255)
+    sap_polyshri = models.CharField(max_length=100, blank=True, null=True)
+    sap_rio = models.CharField(max_length=100, blank=True, null=True)
+    sap_ne = models.CharField(max_length=100, blank=True, null=True)
+    sap_sms = models.CharField(max_length=100, blank=True, null=True)
+    sap_smmpl = models.CharField(max_length=100, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.name} - {self.gstn_no}"        
 
 #----------------------------INVOICE SHIPMENT MODEL--------------------------------------------------
 
