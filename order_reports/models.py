@@ -220,3 +220,84 @@ def update_order_status_on_shipment(sender, instance, **kwargs):
                 order.save()
     except Exception as e:
         pass
+
+
+# APPROVALS model---------------------
+
+
+class ApprovalRequest(models.Model):
+    STATUS_CHOICES = (
+        ('Pending', 'Pending'),
+        ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
+    )
+
+    # 1. Approval No -> Auto Generate
+    approval_no = models.CharField(max_length=50, unique=True, blank=True)
+    # 2. Request Date -> Manual
+    request_date = models.DateField()
+    # 3. Requested By -> Auto Login User
+    requested_by = models.CharField(max_length=255)
+    # 4. Merchant_ID -> Manual
+    merchant_id = models.CharField(max_length=255)
+    # 5. Firm Name -> Dropdown
+    firm = models.ForeignKey(Firm, on_delete=models.SET_NULL, null=True)
+    # 6. Bill Location -> Dropdown
+    bill_location = models.ForeignKey(Location, related_name='bill_approvals', on_delete=models.SET_NULL, null=True)
+    # 7. Ship Location -> Dropdown
+    ship_location = models.ForeignKey(Location, related_name='ship_approvals', on_delete=models.SET_NULL, null=True)
+    # 8. Merchant -> Dropdown
+    merchant = models.ForeignKey(Merchant, on_delete=models.SET_NULL, null=True)
+
+    # 26. Status -> Auto Pending initially
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Pending')
+    # 27. Authorized By -> Admin User details when approved
+    authorized_by = models.CharField(max_length=255, null=True, blank=True)
+
+    def __str__(self):
+        return self.approval_no
+
+# --- 🚀 2. APPROVAL ITEMS (DETAILS TABLE) ---
+class ApprovalItem(models.Model):
+    # Master se link karne ke liye
+    approval = models.ForeignKey(ApprovalRequest, related_name='items', on_delete=models.CASCADE)
+    
+    # 9. ASIN/FSN -> Dropdown (Frontend se value aayegi)
+    asin_fsn = models.CharField(max_length=255)
+    # 10. Model Name -> Auto Fill
+    model_name = models.CharField(max_length=255)
+    # 11. Model -> Auto Fill
+    model_no = models.CharField(max_length=255, null=True, blank=True)
+    # 12. Req Qty -> Manual
+    req_qty = models.IntegerField()
+    # 13. Purchase Price -> Manual
+    purchase_price = models.DecimalField(max_digits=12, decimal_places=2)
+    # 14. Cn Amt -> Manual
+    cn_amt = models.DecimalField(max_digits=12, decimal_places=2)
+    # 15. Agreed NLC -> Auto formula (Purchase Price - CN Amt)
+    agreed_nlc = models.DecimalField(max_digits=12, decimal_places=2)
+    # 16. Link Used -> Dropdown (Yes/No)
+    link_used = models.CharField(max_length=10, default='No')
+    # 17. Expected Delivery Date -> Calendar
+    expected_delivery_date = models.DateField()
+
+    # --- 🛑 HIDDEN FIELDS (For Later Use) ---
+    # 18. Placed Qty
+    placed_qty = models.IntegerField(null=True, blank=True)
+    # 19. Order NLC
+    order_nlc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # 20. Total Placed Amt
+    total_placed_amt = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # 21. Total CN Amt
+    total_cn_amt = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # 22. Variance Qty
+    variance_qty = models.IntegerField(null=True, blank=True)
+    # 23. Placed By
+    placed_by = models.CharField(max_length=255, null=True, blank=True)
+    # 24. Payment Method
+    payment_method = models.CharField(max_length=255, null=True, blank=True)
+    # 25. SAP PO No
+    sap_po_no = models.CharField(max_length=255, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.asin_fsn} - {self.approval.approval_no}"

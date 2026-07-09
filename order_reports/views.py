@@ -5,8 +5,8 @@ from rest_framework.decorators import api_view,permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller 
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer
 import pandas as pd
 from rest_framework.decorators import action
 from django.db.models import Q
@@ -924,4 +924,61 @@ def upload_models_excel(request):
 
     except Exception as e:
         print(f"Excel Upload Error: {e}")
-        return Response({"error": "Failed to read the Excel file. Make sure format is correct."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)    
+        return Response({"error": "Failed to read the Excel file. Make sure format is correct."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+      
+# APPROVAL VIEWSET ------------------
+
+class ApprovalViewSet(viewsets.ModelViewSet):
+    serializer_class = ApprovalRequestSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Admin ko sab dikhega, User ko sirf uske banaye hue approvals dikhenge
+        if self.request.user.role == 'ADMIN':
+            return ApprovalRequest.objects.all().order_by('-id')
+        return ApprovalRequest.objects.filter(requested_by=self.request.user.username).order_by('-id')
+
+    def perform_create(self, serializer):
+        # 1. 🔥 SEQUENCE GENERATOR LOGIC (ORD/SMG/00001)
+        prefix = "ORD/SMG/"
+        last_approval = ApprovalRequest.objects.filter(approval_no__startswith=prefix).order_by('-id').first()
+        
+        if last_approval:
+            # Example: 'ORD/SMG/00001' se '00001' nikal kar int me convert karo aur +1 karo
+            last_no = last_approval.approval_no.replace(prefix, "")
+            new_no = int(last_no) + 1
+        else:
+            new_no = 1
+            
+        # Zfill string ko 00001 format me convert karta hai
+        new_approval_no = f"{prefix}{str(new_no).zfill(5)}"
+        
+        # Save karte time Requested By aur Approval No daal do
+        serializer.save(
+            approval_no=new_approval_no, 
+            requested_by=self.request.user.username # Frontend JWT se jo aayega
+        )
+
+    # 🚀 ADMIN ONLY ACTION: APPROVE
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        if request.user.role != 'ADMIN':
+            return Response({"error": "Only Admins can approve."}, status=status.HTTP_403_FORBIDDEN)
+            
+        approval = self.get_object()
+        approval.status = 'Approved'
+        approval.authorized_by = request.user.username
+        approval.save()
+        return Response({"message": "Approval Request Approved!"}, status=status.HTTP_200_OK)
+
+    # 🚀 ADMIN ONLY ACTION: REJECT
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        if request.user.role != 'ADMIN':
+            return Response({"error": "Only Admins can reject."}, status=status.HTTP_403_FORBIDDEN)
+            
+        approval = self.get_object()
+        approval.status = 'Rejected'
+        approval.authorized_by = request.user.username
+        approval.save()
+        return Response({"message": "Approval Request Rejected!"}, status=status.HTTP_200_OK)     

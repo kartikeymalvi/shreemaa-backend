@@ -1,6 +1,6 @@
 from rest_framework import serializers
-
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller
+from django.db import transaction
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller,ApprovalRequest, ApprovalItem
 
 class OrderReportSerializer(serializers.ModelSerializer):
     class Meta:
@@ -85,4 +85,37 @@ class InvoiceShipmentSerializer(serializers.ModelSerializer):
                     "error": f"Validation Failed: Invoice Number '{invoice_no}' pehle se exist karta hai! Duplicate allowed nahi hai."
                 })
                 
-        return data        
+        return data       
+
+
+#APPROVAL SERIALISERS---------------     
+class ApprovalItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApprovalItem
+        fields = '__all__'
+        read_only_fields = ['approval'] # Ye backend khud set karega
+
+class ApprovalRequestSerializer(serializers.ModelSerializer):
+    items = ApprovalItemSerializer(many=True) # Items array accept karne ke liye
+
+    # GET api me Dropdown ke names dikhane ke liye
+    firm_name = serializers.CharField(source='firm.name', read_only=True)
+    bill_location_name = serializers.CharField(source='bill_location.name', read_only=True)
+    ship_location_name = serializers.CharField(source='ship_location.name', read_only=True)
+    merchant_name = serializers.CharField(source='merchant.name', read_only=True)
+
+    class Meta:
+        model = ApprovalRequest
+        fields = '__all__'
+        read_only_fields = ['approval_no', 'requested_by', 'status', 'authorized_by']
+
+    # Custom Create Logic (Master + Multiple Items Ek Sath Save)
+    @transaction.atomic
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        approval = ApprovalRequest.objects.create(**validated_data)
+        
+        for item_data in items_data:
+            ApprovalItem.objects.create(approval=approval, **item_data)
+            
+        return approval
