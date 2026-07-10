@@ -239,7 +239,7 @@ class ApprovalRequest(models.Model):
     # 3. Requested By -> Auto Login User
     requested_by = models.CharField(max_length=255)
     # 4. Merchant_ID -> Manual
-    merchant_id = models.CharField(max_length=255)
+    merchant_account_id = models.CharField(max_length=255, blank=True, null=True)
     # 5. Firm Name -> Dropdown
     firm = models.ForeignKey(Firm, on_delete=models.SET_NULL, null=True)
     # 6. Bill Location -> Dropdown
