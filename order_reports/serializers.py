@@ -132,14 +132,25 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
     # Custom Create Logic 
     @transaction.atomic
     def create(self, validated_data):
-        # 🔥 FIX 2: [] lagaya taaki agar items khali aaye toh KeyError se crash na ho
-        items_data = validated_data.pop('items', []) 
-        approval = ApprovalRequest.objects.create(**validated_data)
-        
-        for item_data in items_data:
-            ApprovalItem.objects.create(approval=approval, **item_data)
+        try:
+            # Pop the items array safely
+            items_data = validated_data.pop('items', [])
             
-        return approval
+            # Master request save karein
+            approval = ApprovalRequest.objects.create(**validated_data)
+            
+            # Items loop karke child table me save karein
+            for item_data in items_data:
+                ApprovalItem.objects.create(approval=approval, **item_data)
+                
+            return approval
+            
+        except Exception as e:
+            # 🔥 MAGIC LINE: Agar database fat-ta hai, toh HTML error ki jagah 
+            # Frontend par ek popup aayega jo exact Python error batayega!
+            raise serializers.ValidationError({
+                "error": f"Database Save Error: {str(e)}"
+            })
     
 class FirmDropdownSerializer(serializers.ModelSerializer):
     class Meta: 
