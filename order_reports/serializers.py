@@ -107,7 +107,7 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = ApprovalRequest
         fields = '__all__'
-        read_only_fields = ['approval_no', 'requested_by', 'status', 'authorized_by']
+        read_only_fields = [ 'requested_by', 'status', 'authorized_by']
         
         extra_kwargs = {
             'firm': {'required': False, 'allow_null': True},
