@@ -971,12 +971,10 @@ class ApprovalViewSet(viewsets.ModelViewSet):
             
         new_approval_no = f"{prefix}{str(new_no).zfill(5)}"
         
-        # 🔥 Security Lock: Frontend chahe kuch bhi bheje, Django token user se hi 'requested_by' set karega
-        strict_username = getattr(self.request.user, 'username', str(self.request.user))
-        
+        # 🔥 FIX: Ab hum 'requested_by' force nahi kar rahe hain. 
+        # Jo Frontend form me manually bhara jayega, wahi save hoga!
         serializer.save(
-            approval_no=new_approval_no, 
-            requested_by=strict_username 
+            approval_no=new_approval_no 
         )
 
     # 🚀 STRICTOR ADMIN CHECKING ON APPROVAL

@@ -236,8 +236,9 @@ class ApprovalRequest(models.Model):
     approval_no = models.CharField(max_length=50, unique=True, blank=True)
     # 2. Request Date -> Manual
     request_date = models.DateField()
-    # 3. Requested By -> Auto Login User
+    # 3. Requested By , placed by  -> Manual
     requested_by = models.CharField(max_length=255)
+    placed_by = models.CharField(max_length=255, null=True, blank=True)
     # 4. Merchant_ID -> Manual
     merchant_account_id = models.CharField(max_length=255, blank=True, null=True)
     # 5. Firm Name -> Dropdown
