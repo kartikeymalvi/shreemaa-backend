@@ -151,6 +151,26 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "error": f"Database Save Error: {str(e)}"
             })
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        try:
+            # 1. Naye items nikal lo
+            items_data = validated_data.pop('items', [])
+            
+            # 2. Master Table fields update karo
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            
+            # 3. Purane saare items delete karke, Naye (Edited) items insert karo
+            instance.items.all().delete()
+            for item_data in items_data:
+                ApprovalItem.objects.create(approval=instance, **item_data)
+                
+            return instance
+            
+        except Exception as e:
+            raise serializers.ValidationError({"error": f"Update Error: {str(e)}"})    
     
 class FirmDropdownSerializer(serializers.ModelSerializer):
     class Meta: 
