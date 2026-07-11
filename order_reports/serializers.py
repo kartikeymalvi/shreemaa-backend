@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller,ApprovalRequest, ApprovalItem
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller,ApprovalRequest, ApprovalItem,GRPORecord
 
 class OrderReportSerializer(serializers.ModelSerializer):
     class Meta:
