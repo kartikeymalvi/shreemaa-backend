@@ -1008,3 +1008,61 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         approval.authorized_by = getattr(request.user, 'username', str(request.user))
         approval.save()
         return Response({"message": "Approval Request Rejected Successfully!"}, status=status.HTTP_200_OK)
+
+
+
+# ------------------------- GRPO VIEWSET -------------------------
+class GRPORecordViewSet(viewsets.ModelViewSet):
+    queryset = GRPORecord.objects.all().order_by('-id')
+    serializer_class = GRPORecordSerializer
+    permission_classes = [IsAuthenticated] # Agar bina login chalana ho toh ise hata dena
+
+    # 🔥 BULK EXCEL UPLOAD LOGIC 🔥
+    @action(detail=False, methods=['post'])
+    def upload_excel(self, request):
+        file = request.FILES.get('file')
+        if not file:
+            return Response({"error": "Bhai, koi file upload nahi hui!"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Excel ya CSV dono support karega
+            if file.name.endswith('.csv'):
+                df = pd.read_csv(file)
+            else:
+                df = pd.read_excel(file)
+                
+            # Khali cells ko khali string bana do taaki 'nan' na aaye
+            df = df.fillna('')
+            
+            records = []
+            for index, row in df.iterrows():
+                # Strings safe conversion
+                grpo_qty = str(row.get('grpo_quantity', '0')).replace(',', '').strip()
+                grpo_amt = str(row.get('grpo_amt', '0')).replace(',', '').strip()
+
+                records.append(GRPORecord(
+                    firm_name=str(row.get('firm_name', '')),
+                    internal_number=str(row.get('internal_number', '')),
+                    grpo_status=str(row.get('grpo_status', 'Open')),
+                    grpo_user_name=str(row.get('grpo_user_name', '')),
+                    grpo_no=str(row.get('grpo_no', '')),
+                    grpo_invoice_number=str(row.get('grpo_invoice_number', '')),
+                    grpo_create_date=str(row.get('grpo_create_date', '')),
+                    grpo_posting_date=str(row.get('grpo_posting_date', '')),
+                    purchase_vendor_code=str(row.get('purchase_vendor_code', '')),
+                    purchase_vendor_name=str(row.get('purchase_vendor_name', '')),
+                    inward_whs_code=str(row.get('inward_whs_code', '')),
+                    item_code=str(row.get('item_code', '')),
+                    description=str(row.get('description', '')),
+                    
+                    # Decimal conversion safe math
+                    grpo_quantity=float(grpo_qty) if grpo_qty.replace('.','',1).isdigit() else 0.0,
+                    grpo_amt=float(grpo_amt) if grpo_amt.replace('.','',1).isdigit() else 0.0,
+                ))
+            
+            # Bulk create for blazing fast database insert
+            GRPORecord.objects.bulk_create(records)
+            return Response({"message": f"{len(records)} GRPO records successfully imported!"}, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({"error": f"File process karne me error aaya: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

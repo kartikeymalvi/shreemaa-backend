@@ -19,7 +19,8 @@ from .views import (
     bulk_delete_orders,
     bulk_delete_invoices,
     upload_models_excel,
-    ApprovalViewSet
+    ApprovalViewSet,
+    GRPORecordViewSet
 )
 
 # Naye master routes ke liye router
@@ -29,6 +30,7 @@ router.register(r'locations', LocationViewSet)
 router.register(r'merchants', MerchantViewSet)
 router.register(r'models', ProductModelViewSet, basename='productmodel')
 router.register(r'sellers', SellerViewSet, basename='seller')
+router.register(r'grpo', GRPORecordViewSet, basename='grpo')
 
 #approval path -----------
 router.register(r'approvals', ApprovalViewSet, basename='approval')

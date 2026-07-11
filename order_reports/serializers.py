@@ -191,3 +191,15 @@ class ModelDropdownSerializer(serializers.ModelSerializer):
     class Meta: 
         model = ProductModel
         fields = ['id', 'asin_fsn', 'model_name', 'model']    
+
+
+
+# grpo 
+
+from .models import GRPORecord
+
+# ------------------------- GRPO SERIALIZER -------------------------
+class GRPORecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GRPORecord
+        fields = '__all__'        

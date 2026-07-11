@@ -302,3 +302,36 @@ class ApprovalItem(models.Model):
 
     def __str__(self):
         return f"{self.asin_fsn} - {self.approval.approval_no}"
+
+
+
+#GRPO MODEL-----------------------
+
+
+class GRPORecord(models.Model):
+    firm_name = models.CharField(max_length=255, null=True, blank=True)
+    internal_number = models.CharField(max_length=255, null=True, blank=True)
+    grpo_status = models.CharField(max_length=100, default='Open')
+    grpo_user_name = models.CharField(max_length=255, null=True, blank=True)
+    
+    grpo_no = models.CharField(max_length=255, null=True, blank=True)
+    grpo_invoice_number = models.CharField(max_length=255, null=True, blank=True)
+    
+    # Dates (Stored as strings mapping DD-MM-YYYY or DateField)
+    grpo_create_date = models.CharField(max_length=50, null=True, blank=True)
+    grpo_posting_date = models.CharField(max_length=50, null=True, blank=True)
+    
+    purchase_vendor_code = models.CharField(max_length=255, null=True, blank=True)
+    purchase_vendor_name = models.CharField(max_length=255, null=True, blank=True)
+    inward_whs_code = models.CharField(max_length=255, null=True, blank=True)
+    
+    item_code = models.CharField(max_length=255, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    
+    grpo_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0.0)
+    grpo_amt = models.DecimalField(max_digits=15, decimal_places=2, default=0.0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.grpo_no} - {self.item_code}"
