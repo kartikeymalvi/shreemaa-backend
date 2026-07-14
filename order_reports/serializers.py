@@ -6,6 +6,13 @@ class OrderReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderReport
         fields = '__all__'
+        extra_kwargs = {
+            'card_no': {'required': False, 'allow_null': True},
+            'placed_by': {'required': False, 'allow_null': True},
+            'seller_gstn': {'required': False, 'allow_null': True},
+            'seller_name': {'required': False, 'allow_null': True},
+            # Baaki auto fields ko bhi optional kwargs me daal sakte hain
+        }
 
     # 🔥 STRICT VALIDATION: Order ID + ASIN Combo Check (Manual Entry ke liye)
     def validate(self, data):

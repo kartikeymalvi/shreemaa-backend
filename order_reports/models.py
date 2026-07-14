@@ -41,6 +41,26 @@ class OrderReport(models.Model):
     # New Auto-calculated field
     card_offer = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
+    card_no = models.CharField(max_length=100, null=True, blank=True)
+    placed_by = models.CharField(max_length=255, null=True, blank=True)
+    seller_gstn = models.CharField(max_length=15, null=True, blank=True)
+    seller_name = models.CharField(max_length=255, null=True, blank=True)
+    
+    # Auto-computed / Cross-module fields (Default 0 de rahe hain)
+    delivered_qty = models.IntegerField(default=0)
+    delivered_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    cancel_qty = models.IntegerField(default=0)
+    
+    discrepancy_qty = models.IntegerField(default=0)
+    discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    refund_qty = models.IntegerField(default=0)
+    
+    pending_qty = models.IntegerField(default=0)
+    pending_refund = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
+    grpo_qty = models.IntegerField(default=0)
+    grpo_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+
     class Meta:
         unique_together = ('order_id', 'asin_fsn')
 

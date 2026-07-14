@@ -66,6 +66,13 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
 
         return queryset
 
+import pandas as pd
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from .models import OrderReport, Firm, Location, Merchant, ProductModel
+
 class BulkUploadExcelView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -77,8 +84,11 @@ class BulkUploadExcelView(APIView):
             if file.name.endswith('.csv'): df = pd.read_csv(file)
             else: df = pd.read_excel(file)
 
-            # --- 🔥 HEADER VALIDATION ---
+            # --- 🔥 HEADER VALIDATION 🔥 ---
             uploaded_headers = set(df.columns.str.strip().str.lower())
+            
+            # NOTE: New columns (card_no, placed_by, etc.) are INTENTIONALLY excluded here 
+            # so they remain purely OPTIONAL for the users.
             EXPECTED_HEADERS = [
                 'order_id', 'txn date', 'month', 'day', 'txn detail',
                 'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn',
@@ -128,7 +138,6 @@ class BulkUploadExcelView(APIView):
             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
             merchant_map = {m.lower(): m for m in Merchant.objects.values_list('name', flat=True)}
 
-            # Yahan hum strictly Model Name text match karne ki jagah, ASIN ko key banayenge
             master_products = {m.asin_fsn.lower(): m for m in ProductModel.objects.all()}
             existing_orders = set(OrderReport.objects.values_list('order_id', 'asin_fsn'))
 
@@ -152,7 +161,6 @@ class BulkUploadExcelView(APIView):
                     dup_count += 1
                 file_order_asins.add(order_asin_combo)
 
-                # Strict Master Checks (Lekin Model Name/No text check hata diya gaya hai)
                 if raw_firm and raw_firm not in firm_map: firm_count += 1
                 if raw_location and raw_location not in location_map: loc_count += 1
                 if raw_merchant and raw_merchant not in merchant_map: merch_count += 1
@@ -186,11 +194,16 @@ class BulkUploadExcelView(APIView):
                 raw_merchant = get_str(row, ['merchant']).lower()
                 raw_asin_fsn = get_str(row, ['asin/fsn', 'fsn', 'asin_fsn']).lower()
 
-                # 🔥 AUTO-FETCH FROM MASTER 🔥 (Excel name ignore karega, Master db wala hi daalega)
                 master_item = master_products.get(raw_asin_fsn)
                 final_asin = master_item.asin_fsn if master_item else get_str(row, ['asin/fsn', 'fsn'])
                 final_model_name = master_item.model_name if master_item else get_str(row, ['model name'])
                 final_model_no = master_item.model if master_item else get_str(row, ['model', 'model no'])
+
+                # 🔥 EXTRACTION OF NEW OPTIONAL FIELDS 🔥
+                final_card_no = get_str(row, ['card no', 'card_no', 'card number'])
+                final_placed_by = get_str(row, ['placed by', 'placed_by', 'ordered by'])
+                final_seller_name = get_str(row, ['seller name', 'seller_name', 'seller'])
+                final_seller_gstn = get_str(row, ['seller gstn', 'seller_gst', 'gstn'])
 
                 records_to_create.append(OrderReport(
                     order_id=order_id, txn_date=txn_date,
@@ -200,7 +213,6 @@ class BulkUploadExcelView(APIView):
                     firm=firm_map.get(raw_firm, ''),
                     location=location_map.get(raw_location, ''),
                     
-                    # Exact Master format details assign ho rahe hain
                     asin_fsn=final_asin,
                     model_name=final_model_name,
                     model_no=final_model_no,
@@ -211,7 +223,13 @@ class BulkUploadExcelView(APIView):
                     order_amount=get_num(row, ['order amt', 'order amount']),
                     unit_price=get_num(row, ['unit price', 'unit_price']),
                     payment_amount=get_num(row, ['payment', 'payment amt']),
-                    card_offer=get_num(row, ['card offer', 'card_offer'])
+                    card_offer=get_num(row, ['card offer', 'card_offer']),
+
+                    # 🔥 NEW FIELDS ATTACHED 🔥
+                    card_no=final_card_no,
+                    placed_by=final_placed_by,
+                    seller_name=final_seller_name,
+                    seller_gstn=final_seller_gstn
                 ))
 
             OrderReport.objects.bulk_create(records_to_create)
