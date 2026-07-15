@@ -437,7 +437,7 @@ class ProductModelViewSet(viewsets.ModelViewSet):
 #-------------------------INVOICE SHIPMENT---------------
 class InvoiceShipmentViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceShipmentSerializer
-    # pagination_class = StandardResultsSetPagination 
+    pagination_class = StandardResultsSetPagination 
     
     def get_queryset(self):
         try:
