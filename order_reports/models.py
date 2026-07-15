@@ -196,6 +196,16 @@ class InvoiceShipment(models.Model):
     discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
     refund_discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
 
+    cancel_reason = models.TextField(null=True, blank=True)
+    tracking_id = models.CharField(max_length=255, null=True, blank=True)
+    delivery_status = models.CharField(max_length=50, default='Pending')
+    delivery_date = models.CharField(max_length=50, null=True, blank=True)
+    grpo_qty = models.IntegerField(default=0)
+    grpo_pending_qty = models.IntegerField(default=0)
+    grpo_pending_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    refund_discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+
     def __str__(self):
         return f"{self.order_id} - {self.invoice_no}"
 
@@ -345,6 +355,8 @@ class ApprovalItem(models.Model):
     
     # 25. SAP PO No
     sap_po_no = models.CharField(max_length=255, null=True, blank=True)
+
+    
 
     def __str__(self):
         # Adding a fallback just in case approval is not linked temporarily
