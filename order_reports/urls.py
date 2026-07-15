@@ -21,7 +21,8 @@ from .views import (
     upload_models_excel,
     ApprovalViewSet,
     GRPORecordViewSet,
-    DownloadApprovalPDF
+    DownloadApprovalPDF,
+    TicketViewSet
 )
 
 # Naye master routes ke liye router
@@ -32,6 +33,8 @@ router.register(r'merchants', MerchantViewSet)
 router.register(r'models', ProductModelViewSet, basename='productmodel')
 router.register(r'sellers', SellerViewSet, basename='seller')
 router.register(r'grpo', GRPORecordViewSet, basename='grpo')
+# Jahan aapne baaki router register kiye hain, wahi par add karein:
+router.register(r'tickets', TicketViewSet, basename='ticket')
 
 #approval path -----------
 router.register(r'approvals', ApprovalViewSet, basename='approval')

@@ -5,8 +5,8 @@ from rest_framework.decorators import api_view,permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer
 import pandas as pd
 from rest_framework.decorators import action
 from django.db.models import Q
@@ -1286,4 +1286,9 @@ class DownloadApprovalPDF(APIView):
             return response
             
         except Exception as e:
-            return HttpResponse(f"Error generating PDF: {str(e)}", status=400)        
+            return HttpResponse(f"Error generating PDF: {str(e)}", status=400)    
+
+
+class TicketViewSet(viewsets.ModelViewSet):
+    queryset = Ticket.objects.all().order_by('-id')
+    serializer_class = TicketSerializer

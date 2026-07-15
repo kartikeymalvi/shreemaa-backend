@@ -395,3 +395,42 @@ class GRPORecord(models.Model):
 
     def __str__(self):
         return f"{self.grpo_no} - {self.item_code}"
+
+class Ticket(models.Model):
+    ticket_no = models.CharField(max_length=50, unique=True, blank=True)
+    invoice_no = models.CharField(max_length=255)
+    invoice_date = models.CharField(max_length=50, null=True, blank=True)
+    order_id = models.CharField(max_length=255, null=True, blank=True)
+    order_date = models.CharField(max_length=50, null=True, blank=True)
+    merchant = models.CharField(max_length=255, null=True, blank=True)
+    location = models.CharField(max_length=255, null=True, blank=True)
+    asin = models.CharField(max_length=255)
+    model = models.CharField(max_length=255, null=True, blank=True)
+    complaint_type = models.CharField(max_length=255)
+    discrepancy_qty = models.IntegerField(default=0)
+    discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    remark = models.TextField(null=True, blank=True)
+    
+    raised_by = models.CharField(max_length=255, null=True, blank=True)
+    raised_date = models.CharField(max_length=50, null=True, blank=True)
+    ticket_status = models.CharField(max_length=50, default='Open')
+    
+    credit_note_no = models.CharField(max_length=255, null=True, blank=True)
+    refund_received_amt = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    
+    # Photo upload ke liye
+    photo = models.ImageField(upload_to='tickets/', null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        # Auto-generate Ticket Number (e.g., TCK-0001)
+        if not self.ticket_no:
+            last_ticket = Ticket.objects.all().order_by('id').last()
+            if last_ticket:
+                new_id = last_ticket.id + 1
+            else:
+                new_id = 1
+            self.ticket_no = f"TCK-{new_id:04d}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return str(self.ticket_no)        

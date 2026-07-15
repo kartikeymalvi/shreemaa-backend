@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller,ApprovalRequest, ApprovalItem,GRPORecord
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller,ApprovalRequest, ApprovalItem,GRPORecord,Ticket
 
 class OrderReportSerializer(serializers.ModelSerializer):
     class Meta:
@@ -210,4 +210,11 @@ from .models import GRPORecord
 class GRPORecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = GRPORecord
+        fields = '__all__'  
+
+# ticket               
+
+class TicketSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Ticket
         fields = '__all__'        
