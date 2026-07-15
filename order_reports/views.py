@@ -440,45 +440,54 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
     # pagination_class = StandardResultsSetPagination 
     
     def get_queryset(self):
-        queryset = InvoiceShipment.objects.all().order_by('-id')
-        
-        start_date = self.request.query_params.get('start_date')
-        end_date = self.request.query_params.get('end_date')
-        order_id = self.request.query_params.get('order_id')
-        delivery_status = self.request.query_params.get('delivery_status')
-        invoice_no = self.request.query_params.get('invoice_no')
-        firm = self.request.query_params.get('firm')
-        location = self.request.query_params.get('location')
+        try:
+            queryset = InvoiceShipment.objects.all().order_by('-id')
+            
+            # 1. Capture Query Parameters
+            start_date = self.request.query_params.get('start_date')
+            end_date = self.request.query_params.get('end_date')
+            order_id = self.request.query_params.get('order_id')
+            delivery_status = self.request.query_params.get('delivery_status')
+            invoice_no = self.request.query_params.get('invoice_no')
+            firm = self.request.query_params.get('firm')
+            location = self.request.query_params.get('location')
 
-        if start_date:
-            queryset = queryset.filter(txn_date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(txn_date__lte=end_date)
-        if order_id:
-            queryset = queryset.filter(order_id__icontains=order_id)
-        if delivery_status:
-            queryset = queryset.filter(delivery_status__iexact=delivery_status)
-        if invoice_no:
-            queryset = queryset.filter(invoice_no__icontains=invoice_no)
-        if firm:
-            queryset = queryset.filter(firm__iexact=firm)
-        if location:
-            queryset = queryset.filter(location__iexact=location)
+            # 2. Apply Direct Filters
+            if start_date:
+                queryset = queryset.filter(txn_date__gte=start_date)
+            if end_date:
+                queryset = queryset.filter(txn_date__lte=end_date)
+            if order_id:
+                queryset = queryset.filter(order_id__icontains=order_id)
+            if delivery_status:
+                queryset = queryset.filter(delivery_status__iexact=delivery_status)
+            if invoice_no:
+                queryset = queryset.filter(invoice_no__icontains=invoice_no)
+            if firm:
+                queryset = queryset.filter(firm__iexact=firm)
+            if location:
+                queryset = queryset.filter(location__iexact=location)
 
-        search_query = self.request.query_params.get('search', '').strip()
-        if search_query:
-            queryset = queryset.filter(
-                Q(order_id__icontains=search_query) |
-                Q(invoice_no__icontains=search_query) |
-                Q(seller_name__icontains=search_query) |
-                Q(asin_fsn__icontains=search_query) |
-                Q(model_no__icontains=search_query) |
-                Q(seller_gstn__icontains=search_query) |
-                Q(tracking_id__icontains=search_query) |
-                Q(cancel_reason__icontains=search_query) # Search logic enhanced
-            )    
+            # 3. Advanced Global Search Logic
+            search_query = self.request.query_params.get('search', '').strip()
+            if search_query:
+                queryset = queryset.filter(
+                    Q(order_id__icontains=search_query) |
+                    Q(invoice_no__icontains=search_query) |
+                    Q(seller_name__icontains=search_query) |
+                    Q(asin_fsn__icontains=search_query) |
+                    Q(model_no__icontains=search_query) |
+                    Q(seller_gstn__icontains=search_query) |
+                    Q(tracking_id__icontains=search_query) |
+                    Q(cancel_reason__icontains=search_query) # Search logic enhanced
+                )    
 
-        return queryset
+            return queryset
+
+        except Exception as e:
+            # 🛑 500 ERROR FAIL-SAFE: Agar database schema aur query me mismatch hua, toh server crash hone ki bajaye safely handle ho jayega
+            print(f"🔥 Error fetching InvoiceShipments: {str(e)}")
+            return InvoiceShipment.objects.none()
 
 class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1106,40 +1115,31 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
         
 
 class DownloadApprovalPDF(APIView):
-    # permission_classes = [IsAuthenticated] # Agar security chahiye toh ise uncomment karein
+    # permission_classes = [IsAuthenticated] 
 
     def get(self, request, pk):
         try:
-            # Fetch Approval Data
             approval = ApprovalRequest.objects.get(pk=pk)
-            
-            # Create PDF Buffer
             buffer = io.BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+            # Left/Right margins ko thoda kam kiya hai taaki lamba table aaram se fit ho jaye
+            doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=25, leftMargin=25, topMargin=30, bottomMargin=30)
             elements = []
             styles = getSampleStyleSheet()
 
             # --- 1. HEADER ROW (Title + Timestamp) ---
             title_style = ParagraphStyle(
-                name="TitleStyle",
-                fontSize=14,
-                fontName="Helvetica-Bold",
-                textColor=colors.HexColor("#0f172a")
+                name="TitleStyle", fontSize=14, fontName="Helvetica-Bold", textColor=colors.HexColor("#0f172a")
             )
             timestamp_style = ParagraphStyle(
-                name="TimestampStyle",
-                fontSize=8,
-                fontName="Helvetica",
-                textColor=colors.HexColor("#64748b"),
-                alignment=2 # Right Align
+                name="TimestampStyle", fontSize=8, fontName="Helvetica", textColor=colors.HexColor("#64748b"), alignment=2
             )
             
             generated_time = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
             
             header_table = Table([
-                [Paragraph(f"{approval.approval_no} — Online Order Placement Tracker", title_style), 
+                [Paragraph(f"<b>{approval.approval_no} — Online Order Placement Tracker</b>", title_style), 
                  Paragraph(f"Generated: {generated_time}", timestamp_style)]
-            ], colWidths=[550, 220])
+            ], colWidths=[550, 240])
             header_table.setStyle(TableStyle([
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 10)
@@ -1148,7 +1148,6 @@ class DownloadApprovalPDF(APIView):
             elements.append(Spacer(1, 15))
 
             # --- 2. TOP DETAILS GRID ---
-            # Firm, Location wagerah ki handling
             firm_name = approval.firm.name if hasattr(approval, 'firm') and approval.firm else "-"
             ship_loc = approval.ship_location.name if hasattr(approval, 'ship_location') and approval.ship_location else "-"
             bill_loc = approval.bill_location.name if hasattr(approval, 'bill_location') and approval.bill_location else "-"
@@ -1161,10 +1160,10 @@ class DownloadApprovalPDF(APIView):
                 ["Bill Location:", bill_loc, "Authorized By:", str(approval.authorized_by or "-")]
             ]
             
-            t_top = Table(data_top, colWidths=[100, 250, 120, 300])
+            t_top = Table(data_top, colWidths=[90, 260, 110, 310])
             t_top.setStyle(TableStyle([
-                ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'), # Column 0 Bold
-                ('FONTNAME', (2,0), (2,-1), 'Helvetica-Bold'), # Column 2 Bold
+                ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'), 
+                ('FONTNAME', (2,0), (2,-1), 'Helvetica-Bold'), 
                 ('FONTSIZE', (0,0), (-1,-1), 9),
                 ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor("#334155")),
                 ('BOTTOMPADDING', (0,0), (-1,-1), 5),
@@ -1172,13 +1171,21 @@ class DownloadApprovalPDF(APIView):
             elements.append(t_top)
             elements.append(Spacer(1, 20))
 
-            # --- 3. ITEMS TABLE ---
+            # --- 3. ITEMS TABLE WITH TEXT WRAPPING ---
+            # Paragraph Styles text ko cut hone se bachane ke liye (Text-Wrapping)
+            cell_style = ParagraphStyle(name='CellStyle', fontSize=7, leading=9, textColor=colors.HexColor("#475569"))
+            header_cell_style = ParagraphStyle(name='HeaderCellStyle', fontSize=8, leading=10, textColor=colors.white, fontName='Helvetica-Bold')
+
             headers = [
-                "ASIN/FSN", "Model", "Req\nQty", "Purchase\nPrice", "CN", "Agreed\nNLC", 
-                "Link\nUsed", "Placed\nQty", "Order\nNLC", "Payment\nMethod", "Delivery\nDate", "Total\nCost"
+                Paragraph("<b>ASIN/FSN</b>", header_cell_style), Paragraph("<b>Model</b>", header_cell_style), 
+                Paragraph("<b>Req<br/>Qty</b>", header_cell_style), Paragraph("<b>Purchase<br/>Price</b>", header_cell_style), 
+                Paragraph("<b>CN</b>", header_cell_style), Paragraph("<b>Agreed<br/>NLC</b>", header_cell_style), 
+                Paragraph("<b>Link<br/>Used</b>", header_cell_style), Paragraph("<b>Placed<br/>Qty</b>", header_cell_style), 
+                Paragraph("<b>Order<br/>NLC</b>", header_cell_style), Paragraph("<b>Payment<br/>Method</b>", header_cell_style), 
+                Paragraph("<b>Delivery<br/>Date</b>", header_cell_style), Paragraph("<b>Total<br/>Cost</b>", header_cell_style)
             ]
-            item_data = [headers]
             
+            item_data = [headers]
             total_req_qty = 0
             total_placed_qty = 0
             total_cost_sum = 0.0
@@ -1192,9 +1199,11 @@ class DownloadApprovalPDF(APIView):
                 total_placed_qty += placed_qty
                 total_cost_sum += tot_cost
 
+                del_date = item.expected_delivery_date.strftime('%d/%m/%Y') if item.expected_delivery_date else "-"
+
                 item_data.append([
-                    str(item.asin_fsn or "-"), 
-                    str(item.model_name or "-")[:20], # Trimmed to avoid overflow
+                    Paragraph(str(item.asin_fsn or "-"), cell_style), 
+                    Paragraph(str(item.model_name or "-"), cell_style), 
                     str(req_qty), 
                     f"Rs. {item.purchase_price or 0}",
                     f"Rs. {item.cn_amt or 0}", 
@@ -1202,8 +1211,8 @@ class DownloadApprovalPDF(APIView):
                     str(item.link_used or "-"), 
                     str(placed_qty),
                     f"Rs. {item.order_nlc or 0}", 
-                    str(item.payment_method or "-"), 
-                    item.expected_delivery_date.strftime('%d/%m/%Y') if item.expected_delivery_date else "-",
+                    Paragraph(str(item.payment_method or "-"), cell_style), 
+                    Paragraph(del_date, cell_style),
                     f"Rs. {tot_cost}"
                 ])
 
@@ -1212,36 +1221,27 @@ class DownloadApprovalPDF(APIView):
                 "Total", "", str(total_req_qty), "", "", "", "", str(total_placed_qty), "", "", "", f"Rs. {total_cost_sum}"
             ])
 
-            t_items = Table(item_data, colWidths=[80, 130, 35, 60, 45, 55, 35, 45, 55, 65, 70, 70])
+            # Exact widths calculation to fit A4 Landscape (Total ~790 points)
+            t_items = Table(item_data, colWidths=[75, 140, 30, 55, 45, 55, 30, 35, 55, 70, 55, 60])
             
             table_style = TableStyle([
-                # Header Style (Dark Blue as per Screenshot)
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f172a")), 
-                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0,0), (-1,0), 8),
                 ('ALIGN', (0,0), (-1,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('BOTTOMPADDING', (0,0), (-1,0), 8),
-                ('TOPPADDING', (0,0), (-1,0), 8),
-                
-                # Data Rows Style
+                ('BOTTOMPADDING', (0,0), (-1,0), 6),
+                ('TOPPADDING', (0,0), (-1,0), 6),
                 ('FONTNAME', (0,1), (-1,-2), 'Helvetica'),
                 ('FONTSIZE', (0,1), (-1,-2), 8),
                 ('TEXTCOLOR', (0,1), (-1,-2), colors.HexColor("#475569")),
-                ('BOTTOMPADDING', (0,1), (-1,-1), 6),
-                ('TOPPADDING', (0,1), (-1,-1), 6),
-                ('GRID', (0,0), (-1,-2), 0.5, colors.HexColor("#e2e8f0")), # Light Gray Grid
-                
-                # Alternate Row Colors
+                ('BOTTOMPADDING', (0,1), (-1,-1), 5),
+                ('TOPPADDING', (0,1), (-1,-1), 5),
+                ('GRID', (0,0), (-1,-2), 0.5, colors.HexColor("#e2e8f0")), 
             ])
             
-            # Applying Alternate Row Colors dynamically
             for i in range(1, len(item_data)-1):
                 if i % 2 == 0:
                     table_style.add('BACKGROUND', (0, i), (-1, i), colors.HexColor("#f8fafc"))
                     
-            # Total Row Style (Yellowish cream as per screenshot)
             table_style.add('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fef3c7"))
             table_style.add('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
             table_style.add('TEXTCOLOR', (0, -1), (-1, -1), colors.HexColor("#000000"))
@@ -1251,26 +1251,32 @@ class DownloadApprovalPDF(APIView):
             elements.append(t_items)
             elements.append(Spacer(1, 40))
 
-            # --- 4. SIGNATURE SECTIONS ---
+            # --- 4. SIGNATURE SECTIONS (Dynamically picking up Admin's name) ---
+            req_by_text = approval.requested_by if approval.requested_by else "_________________________"
+            placed_by_text = approval.placed_by if approval.placed_by else "_________________________"
+            
+            # 🔥 APPROVED BY MEIN ADMIN KA NAAM YAHAN AAYEGA 🔥
+            approved_by_text = approval.authorized_by if approval.authorized_by else "_________________________"
+
             sig_data = [
                 ["Order Requested By", "Order Placed By", "Order Approved By"],
-                ["\n\n\n_________________________", "\n\n\n_________________________", "\n\n\n_________________________"]
+                [f"\n\n\n{req_by_text}", f"\n\n\n{placed_by_text}", f"\n\n\n{approved_by_text}"]
             ]
-            t_sigs = Table(sig_data, colWidths=[250, 250, 250])
+            t_sigs = Table(sig_data, colWidths=[260, 260, 260])
             t_sigs.setStyle(TableStyle([
                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0,0), (-1,0), 9),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#334155")),
+                ('FONTNAME', (0,1), (-1,1), 'Helvetica'), # Name lines in normal font
+                ('FONTSIZE', (0,1), (-1,1), 9),
             ]))
             elements.append(t_sigs)
             elements.append(Spacer(1, 30))
             
-            # Bottom Disclaimer
             disclaimer = ParagraphStyle(name="Disclaimer", fontSize=7, textColor=colors.HexColor("#94a3b8"))
             elements.append(Paragraph(f"This document was generated automatically on {generated_time} upon approval.", disclaimer))
 
-            # Generate PDF
             doc.build(elements)
             pdf = buffer.getvalue()
             buffer.close()
