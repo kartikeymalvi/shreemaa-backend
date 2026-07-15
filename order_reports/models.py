@@ -184,6 +184,17 @@ class InvoiceShipment(models.Model):
     # 4. AUDIT FIELDS (Track karne ke liye ki entry kab bani aur kab update hui)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    invoice_status = models.CharField(max_length=50, default='Open', null=True, blank=True)
+    cancel_reason = models.TextField(null=True, blank=True)
+    del_date = models.CharField(max_length=50, null=True, blank=True) # CharField taaki empty string par error na aaye
+
+    # 🔥 CROSS-MODULE METRICS (GRPO, Issues, Refund) 🔥
+    grpo_qty = models.IntegerField(default=0)
+    grpo_pending_qty = models.IntegerField(default=0)
+    grpo_pending_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
+    discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    refund_discrepancy_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
 
     def __str__(self):
         return f"{self.order_id} - {self.invoice_no}"
@@ -281,47 +292,64 @@ class ApprovalRequest(models.Model):
 # --- 🚀 2. APPROVAL ITEMS (DETAILS TABLE) ---
 class ApprovalItem(models.Model):
     # Master se link karne ke liye
-    approval = models.ForeignKey(ApprovalRequest, related_name='items', on_delete=models.CASCADE)
+    approval = models.ForeignKey('ApprovalRequest', related_name='items', on_delete=models.CASCADE)
     
     # 9. ASIN/FSN -> Dropdown (Frontend se value aayegi)
-    asin_fsn = models.CharField(max_length=255)
+    asin_fsn = models.CharField(max_length=255, null=True, blank=True)
+    
     # 10. Model Name -> Auto Fill
-    model_name = models.CharField(max_length=255)
+    model_name = models.CharField(max_length=255, null=True, blank=True)
+    
     # 11. Model -> Auto Fill
     model_no = models.CharField(max_length=255, null=True, blank=True)
+    
     # 12. Req Qty -> Manual
-    req_qty = models.IntegerField()
+    req_qty = models.IntegerField(default=0)
+    
     # 13. Purchase Price -> Manual
-    purchase_price = models.DecimalField(max_digits=12, decimal_places=2)
+    purchase_price = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
     # 14. Cn Amt -> Manual
-    cn_amt = models.DecimalField(max_digits=12, decimal_places=2)
+    cn_amt = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
     # 15. Agreed NLC -> Auto formula (Purchase Price - CN Amt)
-    agreed_nlc = models.DecimalField(max_digits=12, decimal_places=2)
+    agreed_nlc = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
     # 16. Link Used -> Dropdown (Yes/No)
     link_used = models.CharField(max_length=10, default='No')
+    
     # 17. Expected Delivery Date -> Calendar
-    expected_delivery_date = models.DateField()
+    expected_delivery_date = models.DateField(null=True, blank=True)
 
     # --- 🛑 HIDDEN FIELDS (For Later Use) ---
     # 18. Placed Qty
-    placed_qty = models.IntegerField(null=True, blank=True)
+    placed_qty = models.IntegerField(null=True, blank=True, default=0)
+    
     # 19. Order NLC
-    order_nlc = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    order_nlc = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, default=0.00)
+    
     # 20. Total Placed Amt
-    total_placed_amt = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_placed_amt = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, default=0.00)
+    
     # 21. Total CN Amt
-    total_cn_amt = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_cn_amt = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, default=0.00)
+    
     # 22. Variance Qty
-    variance_qty = models.IntegerField(null=True, blank=True)
+    variance_qty = models.IntegerField(null=True, blank=True, default=0)
+    
     # 23. Placed By
     placed_by = models.CharField(max_length=255, null=True, blank=True)
+    
     # 24. Payment Method
     payment_method = models.CharField(max_length=255, null=True, blank=True)
+    
     # 25. SAP PO No
     sap_po_no = models.CharField(max_length=255, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.asin_fsn} - {self.approval.approval_no}"
+        # Adding a fallback just in case approval is not linked temporarily
+        approval_no = self.approval.approval_no if self.approval else "Pending"
+        return f"{self.asin_fsn} - {approval_no}"
 
 
 

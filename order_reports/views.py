@@ -16,6 +16,16 @@ import math
 import datetime
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Sum
+import io
+from datetime import datetime
+from django.http import HttpResponse
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from .models import ApprovalRequest
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 50
@@ -425,12 +435,10 @@ class ProductModelViewSet(viewsets.ModelViewSet):
             writer.writerow([obj.asin_fsn, obj.model_name, obj.model, obj.sap_polyshri, obj.sap_rio, obj.sap_ne, obj.sap_sms, obj.sap_smmpl])
         return response
 #-------------------------INVOICE SHIPMENT---------------
-
 class InvoiceShipmentViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceShipmentSerializer
-    pagination_class = StandardResultsSetPagination # (FIX: Pagination Uncomment kar diya hai)
+    # pagination_class = StandardResultsSetPagination 
     
-
     def get_queryset(self):
         queryset = InvoiceShipment.objects.all().order_by('-id')
         
@@ -438,6 +446,9 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
         end_date = self.request.query_params.get('end_date')
         order_id = self.request.query_params.get('order_id')
         delivery_status = self.request.query_params.get('delivery_status')
+        invoice_no = self.request.query_params.get('invoice_no')
+        firm = self.request.query_params.get('firm')
+        location = self.request.query_params.get('location')
 
         if start_date:
             queryset = queryset.filter(txn_date__gte=start_date)
@@ -446,9 +457,15 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
         if order_id:
             queryset = queryset.filter(order_id__icontains=order_id)
         if delivery_status:
-            queryset = queryset.filter(delivery_status=delivery_status)
+            queryset = queryset.filter(delivery_status__iexact=delivery_status)
+        if invoice_no:
+            queryset = queryset.filter(invoice_no__icontains=invoice_no)
+        if firm:
+            queryset = queryset.filter(firm__iexact=firm)
+        if location:
+            queryset = queryset.filter(location__iexact=location)
 
-        search_query = self.request.GET.get('search', '').strip()
+        search_query = self.request.query_params.get('search', '').strip()
         if search_query:
             queryset = queryset.filter(
                 Q(order_id__icontains=search_query) |
@@ -456,8 +473,9 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
                 Q(seller_name__icontains=search_query) |
                 Q(asin_fsn__icontains=search_query) |
                 Q(model_no__icontains=search_query) |
-                Q(seller_gstn__icontains=search_query)|
-                Q(tracking_id__icontains=search_query)
+                Q(seller_gstn__icontains=search_query) |
+                Q(tracking_id__icontains=search_query) |
+                Q(cancel_reason__icontains=search_query) # Search logic enhanced
             )    
 
         return queryset
@@ -477,12 +495,14 @@ class InvoiceShipmentUploadView(APIView):
             uploaded_headers = set(df.columns.str.strip().str.lower())
                 
             EXPECTED_HEADERS = [
-                    'order id', 'txn date', 'firm', 'asin/fsn', 'seller name', 'seller gstn',
-                    'invoice no', 'invoice date', 'inv qty', 'inv amount', 'tracking id'
+                    'order id', 'txn date', 'firm', 'location', 'asin/fsn', 'seller name', 'seller gstn',
+                    'invoice no', 'invoice date', 'invoice qty', 'invoice amount', 'tracking id',
+                    'delivery status', 'delivery date', 'cancel reason'
                 ]
                 
             missing_headers = []
             for header in EXPECTED_HEADERS:
+                # Lenient header matching logic
                 if header == 'order id' and any(h in uploaded_headers for h in ['order id', 'order_id']): continue
                 if header == 'txn date' and any(h in uploaded_headers for h in ['txn date', 'txn_date']): continue
                 if header == 'asin/fsn' and any(h in uploaded_headers for h in ['asin/fsn', 'asin_fsn', 'fsn']): continue
@@ -490,9 +510,12 @@ class InvoiceShipmentUploadView(APIView):
                 if header == 'seller gstn' and any(h in uploaded_headers for h in ['seller gstn', 'seller_gstn']): continue 
                 if header == 'invoice no' and any(h in uploaded_headers for h in ['invoice no', 'invoice_no']): continue
                 if header == 'invoice date' and any(h in uploaded_headers for h in ['invoice date', 'invoice_date']): continue
-                if header == 'inv qty' and any(h in uploaded_headers for h in ['inv qty', 'invoice qty', 'invoice_qty']): continue
-                if header == 'inv amount' and any(h in uploaded_headers for h in ['inv amount', 'invoice amount', 'invoice_amount']): continue
+                if header == 'invoice qty' and any(h in uploaded_headers for h in ['invoice qty', 'invoice_qty', 'inv qty']): continue
+                if header == 'invoice amount' and any(h in uploaded_headers for h in ['invoice amount', 'invoice_amount', 'inv amount']): continue
                 if header == 'tracking id' and any(h in uploaded_headers for h in ['tracking id', 'tracking_id', 'awb']): continue
+                if header == 'delivery status' and any(h in uploaded_headers for h in ['delivery status', 'delivery_status', 'status']): continue
+                if header == 'delivery date' and any(h in uploaded_headers for h in ['delivery date', 'delivery_date', 'del date']): continue
+                if header == 'cancel reason' and any(h in uploaded_headers for h in ['cancel reason', 'cancel_reason', 'reason', 'action remarks']): continue
                 
                 if header not in uploaded_headers:
                     missing_headers.append(header.title())
@@ -505,16 +528,13 @@ class InvoiceShipmentUploadView(APIView):
             df.columns = df.columns.str.strip().str.lower()
             
             valid_orders = set(OrderReport.objects.values_list('order_id', flat=True))
-            
             firm_map = {f.lower(): f for f in Firm.objects.values_list('name', flat=True)}
             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
             valid_models = {m.asin_fsn.lower(): (m.model_name, m.model) for m in ProductModel.objects.all()}
             
-            # 🔥 FIX: Yahan se existing_order_items hata diya hai
             existing_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
             
             missing_order_count = missing_invoice_count = dup_invoice_count = master_mismatch_count = 0
-            
             file_invoices = set()
 
             # --- 🔥 ULTRA BULLETPROOF EXTRACTORS 🔥 ---
@@ -523,8 +543,7 @@ class InvoiceShipmentUploadView(APIView):
                     if k in row_data:
                         val = row_data[k]
                         if pd.notna(val) and val != '' and str(val).strip().lower() not in ['nan', 'none', 'null']:
-                            try:
-                                return float(str(val).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip())
+                            try: return float(str(val).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip())
                             except: pass
                 return 0.0
 
@@ -554,13 +573,11 @@ class InvoiceShipmentUploadView(APIView):
 
                 if order_id not in valid_orders: missing_order_count += 1
                 
-                # 🔥 STRICT INVOICE UNIQUE CHECK (Order ID ki chhut chhaiye par Invoice unique hona chahiye) 🔥
+                # 🔥 STRICT INVOICE UNIQUE CHECK 🔥
                 if not invoice_no: missing_invoice_count += 1
                 else:
                     if invoice_no in existing_invoices or invoice_no in file_invoices: dup_invoice_count += 1
                     file_invoices.add(invoice_no)
-
-                # 🔥 FIX: Yahan se Order Item Pair ka duplicate logic delete kar diya gaya hai 🔥
 
                 if raw_firm and not firm: master_mismatch_count += 1
                 if raw_location and not location: master_mismatch_count += 1
@@ -573,10 +590,10 @@ class InvoiceShipmentUploadView(APIView):
                     if raw_asin_fsn: master_mismatch_count += 1 
 
             error_segments = []
-            if missing_order_count > 0: error_segments.append(f"{missing_order_count} Order ID(s) not found in Order Reports")
+            if missing_order_count > 0: error_segments.append(f"{missing_order_count} Order ID(s) not found in Master")
             if missing_invoice_count > 0: error_segments.append(f"{missing_invoice_count} Missing Invoice No(s)")
             if dup_invoice_count > 0: error_segments.append(f"{dup_invoice_count} Duplicate Invoice No(s)")
-            if master_mismatch_count > 0: error_segments.append(f"{master_mismatch_count} Master/Model mismatch(es)")
+            if master_mismatch_count > 0: error_segments.append(f"{master_mismatch_count} Master Data Mismatch(es)")
 
             if error_segments:
                 total_errors = missing_order_count + missing_invoice_count + dup_invoice_count + master_mismatch_count
@@ -592,15 +609,17 @@ class InvoiceShipmentUploadView(APIView):
                 
                 asin_fsn = [k for k in valid_models.keys() if k == raw_asin_fsn][0] if raw_asin_fsn in valid_models else raw_asin_fsn
 
+                # Linking with Core Order
                 order_data = OrderReport.objects.filter(order_id=order_id, asin_fsn__iexact=asin_fsn).first()
                 
                 if order_data:
                     raw_inv_date = get_str(row, ['invoice date', 'invoice_date'])
-                    invoice_date = None
-                    if raw_inv_date:
-                        try: invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d')
-                        except: pass
+                    invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d') if raw_inv_date else None
                     
+                    raw_del_date = get_str(row, ['delivery date', 'delivery_date', 'del date'])
+                    delivery_date = pd.to_datetime(raw_del_date, dayfirst=True).strftime('%Y-%m-%d') if raw_del_date else None
+
+                    # Construct Payload with Extracted Fields
                     records.append(InvoiceShipment(
                         order_id=order_data.order_id,
                         txn_date=order_data.txn_date,
@@ -611,20 +630,22 @@ class InvoiceShipmentUploadView(APIView):
                         model_no=order_data.model_no,
                         unit_price=order_data.unit_price, 
                         
-                        invoice_no=get_str(row, ['invoice no', 'invoice_no']),
-                        invoice_date=invoice_date,
                         seller_name=get_str(row, ['seller name', 'seller_name']),
                         seller_gstn=get_str(row, ['seller gstn', 'seller_gstn']),
                         
-                        invoice_qty=int(get_num(row, ['inv qty', 'invoice qty', 'invoice_qty']) or 1),
-                        invoice_amount=get_num(row, ['inv amount', 'inv amt', 'invoice amount', 'invoice_amount']),
-                        tracking_id=get_str(row, ['tracking id', 'tracking_id', 'awb']),
+                        invoice_no=get_str(row, ['invoice no', 'invoice_no']),
+                        invoice_date=invoice_date,
+                        invoice_qty=int(get_num(row, ['invoice qty', 'inv qty', 'invoice_qty']) or 1),
+                        invoice_amount=get_num(row, ['invoice amount', 'inv amount', 'inv amt', 'invoice_amount']),
                         
-                        delivery_status="Pending"
+                        tracking_id=get_str(row, ['tracking id', 'tracking_id', 'awb']),
+                        delivery_status=get_str(row, ['delivery status', 'delivery_status', 'status']) or "Pending",
+                        delivery_date=delivery_date,
+                        cancel_reason=get_str(row, ['cancel reason', 'reason', 'action remarks'])
                     ))
             
             InvoiceShipment.objects.bulk_create(records)
-            return Response({"message": f"{len(records)} Shipments uploaded successfully!"}, status=status.HTTP_201_CREATED)
+            return Response({"message": f"{len(records)} Shipments bulk uploaded successfully!"}, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -944,10 +965,8 @@ def upload_models_excel(request):
         print(f"Excel Upload Error: {e}")
         return Response({"error": "Failed to read the Excel file. Make sure format is correct."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
       
-# APPROVAL VIEWSET ------------------
-
 class ApprovalViewSet(viewsets.ModelViewSet):
-    serializer_class = ApprovalRequestSerializer
+    serializer_class = ApprovalRequestSerializer # Ensure you import this
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -1084,3 +1103,181 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
             
         except Exception as e:
             return Response({"error": f"File process karne me error aaya: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+class DownloadApprovalPDF(APIView):
+    # permission_classes = [IsAuthenticated] # Agar security chahiye toh ise uncomment karein
+
+    def get(self, request, pk):
+        try:
+            # Fetch Approval Data
+            approval = ApprovalRequest.objects.get(pk=pk)
+            
+            # Create PDF Buffer
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+            elements = []
+            styles = getSampleStyleSheet()
+
+            # --- 1. HEADER ROW (Title + Timestamp) ---
+            title_style = ParagraphStyle(
+                name="TitleStyle",
+                fontSize=14,
+                fontName="Helvetica-Bold",
+                textColor=colors.HexColor("#0f172a")
+            )
+            timestamp_style = ParagraphStyle(
+                name="TimestampStyle",
+                fontSize=8,
+                fontName="Helvetica",
+                textColor=colors.HexColor("#64748b"),
+                alignment=2 # Right Align
+            )
+            
+            generated_time = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+            
+            header_table = Table([
+                [Paragraph(f"{approval.approval_no} — Online Order Placement Tracker", title_style), 
+                 Paragraph(f"Generated: {generated_time}", timestamp_style)]
+            ], colWidths=[550, 220])
+            header_table.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 10)
+            ]))
+            elements.append(header_table)
+            elements.append(Spacer(1, 15))
+
+            # --- 2. TOP DETAILS GRID ---
+            # Firm, Location wagerah ki handling
+            firm_name = approval.firm.name if hasattr(approval, 'firm') and approval.firm else "-"
+            ship_loc = approval.ship_location.name if hasattr(approval, 'ship_location') and approval.ship_location else "-"
+            bill_loc = approval.bill_location.name if hasattr(approval, 'bill_location') and approval.bill_location else "-"
+            merchant_name = approval.merchant.name if hasattr(approval, 'merchant') and approval.merchant else "-"
+
+            data_top = [
+                ["Approval Date:", approval.request_date.strftime('%d/%m/%Y') if approval.request_date else "-", "Order Requested By:", str(approval.requested_by or "-")],
+                ["Firm Name:", firm_name, "Merchant:", merchant_name],
+                ["Ship Location:", ship_loc, "Merchant_ID:", str(approval.merchant_account_id or "-")],
+                ["Bill Location:", bill_loc, "Authorized By:", str(approval.authorized_by or "-")]
+            ]
+            
+            t_top = Table(data_top, colWidths=[100, 250, 120, 300])
+            t_top.setStyle(TableStyle([
+                ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'), # Column 0 Bold
+                ('FONTNAME', (2,0), (2,-1), 'Helvetica-Bold'), # Column 2 Bold
+                ('FONTSIZE', (0,0), (-1,-1), 9),
+                ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor("#334155")),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ]))
+            elements.append(t_top)
+            elements.append(Spacer(1, 20))
+
+            # --- 3. ITEMS TABLE ---
+            headers = [
+                "ASIN/FSN", "Model", "Req\nQty", "Purchase\nPrice", "CN", "Agreed\nNLC", 
+                "Link\nUsed", "Placed\nQty", "Order\nNLC", "Payment\nMethod", "Delivery\nDate", "Total\nCost"
+            ]
+            item_data = [headers]
+            
+            total_req_qty = 0
+            total_placed_qty = 0
+            total_cost_sum = 0.0
+
+            for item in approval.items.all():
+                req_qty = item.req_qty or 0
+                placed_qty = item.placed_qty or 0
+                tot_cost = float(item.total_placed_amt or 0)
+                
+                total_req_qty += req_qty
+                total_placed_qty += placed_qty
+                total_cost_sum += tot_cost
+
+                item_data.append([
+                    str(item.asin_fsn or "-"), 
+                    str(item.model_name or "-")[:20], # Trimmed to avoid overflow
+                    str(req_qty), 
+                    f"Rs. {item.purchase_price or 0}",
+                    f"Rs. {item.cn_amt or 0}", 
+                    f"Rs. {item.agreed_nlc or 0}", 
+                    str(item.link_used or "-"), 
+                    str(placed_qty),
+                    f"Rs. {item.order_nlc or 0}", 
+                    str(item.payment_method or "-"), 
+                    item.expected_delivery_date.strftime('%d/%m/%Y') if item.expected_delivery_date else "-",
+                    f"Rs. {tot_cost}"
+                ])
+
+            # Totals Row
+            item_data.append([
+                "Total", "", str(total_req_qty), "", "", "", "", str(total_placed_qty), "", "", "", f"Rs. {total_cost_sum}"
+            ])
+
+            t_items = Table(item_data, colWidths=[80, 130, 35, 60, 45, 55, 35, 45, 55, 65, 70, 70])
+            
+            table_style = TableStyle([
+                # Header Style (Dark Blue as per Screenshot)
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f172a")), 
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,0), 8),
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('BOTTOMPADDING', (0,0), (-1,0), 8),
+                ('TOPPADDING', (0,0), (-1,0), 8),
+                
+                # Data Rows Style
+                ('FONTNAME', (0,1), (-1,-2), 'Helvetica'),
+                ('FONTSIZE', (0,1), (-1,-2), 8),
+                ('TEXTCOLOR', (0,1), (-1,-2), colors.HexColor("#475569")),
+                ('BOTTOMPADDING', (0,1), (-1,-1), 6),
+                ('TOPPADDING', (0,1), (-1,-1), 6),
+                ('GRID', (0,0), (-1,-2), 0.5, colors.HexColor("#e2e8f0")), # Light Gray Grid
+                
+                # Alternate Row Colors
+            ])
+            
+            # Applying Alternate Row Colors dynamically
+            for i in range(1, len(item_data)-1):
+                if i % 2 == 0:
+                    table_style.add('BACKGROUND', (0, i), (-1, i), colors.HexColor("#f8fafc"))
+                    
+            # Total Row Style (Yellowish cream as per screenshot)
+            table_style.add('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fef3c7"))
+            table_style.add('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')
+            table_style.add('TEXTCOLOR', (0, -1), (-1, -1), colors.HexColor("#000000"))
+            table_style.add('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#eab308"))
+            
+            t_items.setStyle(table_style)
+            elements.append(t_items)
+            elements.append(Spacer(1, 40))
+
+            # --- 4. SIGNATURE SECTIONS ---
+            sig_data = [
+                ["Order Requested By", "Order Placed By", "Order Approved By"],
+                ["\n\n\n_________________________", "\n\n\n_________________________", "\n\n\n_________________________"]
+            ]
+            t_sigs = Table(sig_data, colWidths=[250, 250, 250])
+            t_sigs.setStyle(TableStyle([
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,0), 9),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#334155")),
+            ]))
+            elements.append(t_sigs)
+            elements.append(Spacer(1, 30))
+            
+            # Bottom Disclaimer
+            disclaimer = ParagraphStyle(name="Disclaimer", fontSize=7, textColor=colors.HexColor("#94a3b8"))
+            elements.append(Paragraph(f"This document was generated automatically on {generated_time} upon approval.", disclaimer))
+
+            # Generate PDF
+            doc.build(elements)
+            pdf = buffer.getvalue()
+            buffer.close()
+            
+            response = HttpResponse(pdf, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="Approval_{approval.approval_no}.pdf"'
+            return response
+            
+        except Exception as e:
+            return HttpResponse(f"Error generating PDF: {str(e)}", status=400)        

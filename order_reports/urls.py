@@ -20,7 +20,8 @@ from .views import (
     bulk_delete_invoices,
     upload_models_excel,
     ApprovalViewSet,
-    GRPORecordViewSet
+    GRPORecordViewSet,
+    DownloadApprovalPDF
 )
 
 # Naye master routes ke liye router
@@ -62,6 +63,7 @@ urlpatterns = [
     #excel download krne ke liye url path
     path('export/orders/', ExportOrderReportsExcelView.as_view(), name='export-orders'),
     path('export/invoices/', ExportInvoiceShipmentExcelView.as_view(), name='export-invoices'),
+    path('approvals/<int:pk>/pdf/', DownloadApprovalPDF.as_view(), name='download-approval-pdf'),
 
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)

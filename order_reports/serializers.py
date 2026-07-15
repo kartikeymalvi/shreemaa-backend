@@ -66,30 +66,31 @@ class SellerSerializer(serializers.ModelSerializer):
         model = Seller
         fields = '__all__'                
 # -------------------------INVOICE SHIPMENT---------------------------------------
-
-       
 class InvoiceShipmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = InvoiceShipment
         fields = '__all__'
+        extra_kwargs = {
+            'invoice_status': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'cancel_reason': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'delivery_date': {'required': False, 'allow_null': True, 'allow_blank': True}
+        }
 
-    # 🔥 STRICT VALIDATION: Duplicate Invoice Number Check (Manual Entry ke liye)
+    # 🔥 STRICT VALIDATION: Duplicate Invoice Number Check
     def validate(self, data):
         invoice_no = data.get('invoice_no')
         
-        # Agar user ne invoice number dala hai, toh check karo
-        if invoice_no:
-            # Check karo ki kya database me ye invoice number pehle se hai?
-            existing_invoice = InvoiceShipment.objects.filter(invoice_no=invoice_no)
+        if invoice_no and str(invoice_no).strip():
+            # Check karo ki kya database me ye invoice number pehle se hai
+            existing_invoice = InvoiceShipment.objects.filter(invoice_no__iexact=str(invoice_no).strip())
             
-            # Agar hum "Edit" kar rahe hain (PUT request), toh khud ki ID ko check me se hata do
+            # Agar Edit kar rahe hain (PUT/PATCH), toh khud ki ID ignore karo
             if self.instance:
                 existing_invoice = existing_invoice.exclude(id=self.instance.id)
                 
-            # Agar record mil gaya, toh turant Error feko!
             if existing_invoice.exists():
                 raise serializers.ValidationError({
-                    "error": f"Validation Failed: Invoice Number '{invoice_no}' pehle se exist karta hai! Duplicate allowed nahi hai."
+                    "error": f"Validation Failed: Invoice Number '{invoice_no}' already exists! Duplicates are not allowed."
                 })
                 
         return data       
