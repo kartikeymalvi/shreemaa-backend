@@ -438,8 +438,8 @@ class ProductModelViewSet(viewsets.ModelViewSet):
 class InvoiceShipmentViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceShipmentSerializer
     pagination_class = StandardResultsSetPagination 
-    
     def get_queryset(self):
+    
         try:
             queryset = InvoiceShipment.objects.all().order_by('-id')
             
@@ -479,8 +479,10 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
                     Q(model_no__icontains=search_query) |
                     Q(seller_gstn__icontains=search_query) |
                     Q(tracking_id__icontains=search_query) |
-                    Q(cancel_reason__icontains=search_query) # Search logic enhanced
-                )    
+                    Q(cancel_reason__icontains=search_query) 
+                )
+                
+                    
 
             return queryset
 
@@ -494,87 +496,95 @@ class InvoiceShipmentUploadView(APIView):
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get('file')
-        if not file: return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+        if not file: 
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            if file.name.endswith('.csv'): df = pd.read_csv(file)
-            else: df = pd.read_excel(file)
+            # 1. Read File
+            if file.name.endswith('.csv'): 
+                df = pd.read_csv(file)
+            else: 
+                df = pd.read_excel(file)
             
-            # --- 🔥 EXCEL HEADER VALIDATION 🔥 ---
-            uploaded_headers = set(df.columns.str.strip().str.lower())
-                
-            EXPECTED_HEADERS = [
-                    'order id', 'txn date', 'firm', 'location', 'asin/fsn', 'seller name', 'seller gstn',
-                    'invoice no', 'invoice date', 'invoice qty', 'invoice amount', 'tracking id',
-                    'delivery status', 'delivery date', 'cancel reason'
-                ]
-                
-            missing_headers = []
-            for header in EXPECTED_HEADERS:
-                # Lenient header matching logic
-                if header == 'order id' and any(h in uploaded_headers for h in ['order id', 'order_id']): continue
-                if header == 'txn date' and any(h in uploaded_headers for h in ['txn date', 'txn_date']): continue
-                if header == 'asin/fsn' and any(h in uploaded_headers for h in ['asin/fsn', 'asin_fsn', 'fsn']): continue
-                if header == 'seller name' and any(h in uploaded_headers for h in ['seller name', 'seller_name']): continue
-                if header == 'seller gstn' and any(h in uploaded_headers for h in ['seller gstn', 'seller_gstn']): continue 
-                if header == 'invoice no' and any(h in uploaded_headers for h in ['invoice no', 'invoice_no']): continue
-                if header == 'invoice date' and any(h in uploaded_headers for h in ['invoice date', 'invoice_date']): continue
-                if header == 'invoice qty' and any(h in uploaded_headers for h in ['invoice qty', 'invoice_qty', 'inv qty']): continue
-                if header == 'invoice amount' and any(h in uploaded_headers for h in ['invoice amount', 'invoice_amount', 'inv amount']): continue
-                if header == 'tracking id' and any(h in uploaded_headers for h in ['tracking id', 'tracking_id', 'awb']): continue
-                if header == 'delivery status' and any(h in uploaded_headers for h in ['delivery status', 'delivery_status', 'status']): continue
-                if header == 'delivery date' and any(h in uploaded_headers for h in ['delivery date', 'delivery_date', 'del date']): continue
-                if header == 'cancel reason' and any(h in uploaded_headers for h in ['cancel reason', 'cancel_reason', 'reason', 'action remarks']): continue
-                
-                if header not in uploaded_headers:
-                    missing_headers.append(header.title())
+            # --- 🔥 SMART EXCEL HEADER MAPPING 🔥 ---
+            # NOTE: DataFrame converts all headers to lower case and strips spaces later, 
+            # so we map to the exact lower-case string.
+            column_map = {
+                'order_id': ['order id'],
+                'txn_date': ['order date'], # Order Date in CSV corresponds to txn_date
+                'asin_fsn': ['asin'],
+                'seller_name': ['seller name'],
+                'seller_gstn': ['seller gstin'],
+                'invoice_no': ['invoice number'],
+                'invoice_date': ['invoice date'],
+                'invoice_qty': ['item quantity'], # Item Quantity from CSV
+                'invoice_amount': ['item net total'], # Item Net Total from CSV
+                'tracking_id': ['carrier tracking #'],
+                'delivery_status': ['delivery status'],
+                'delivery_date': ['expected delivery date'], # Or any actual delivery date column if present
+                'cancel_reason': ['cancel reason', 'action remarks'], # If these exist in your business logic
+                'firm': ['firm', 'company'], # Might not be in this raw sheet
+                'location': ['shipping address'] # Using Shipping Address for location
+            }
 
-            if missing_headers:
-                error_msg = f"Excel format mismatch! Missing columns: {', '.join(missing_headers)}. Upload aborted!"
+            # 2. Normalize uploaded headers
+            df.columns = df.columns.str.strip().str.lower()
+            uploaded_headers = set(df.columns)
+            
+            # 3. Dynamic Validation: Check if at least one alias exists for MUST-HAVE fields
+            REQUIRED_FIELDS = ['order_id', 'invoice_no', 'asin_fsn'] 
+            missing_critical = []
+            
+            actual_column_names = {} 
+            for db_key, aliases in column_map.items():
+                # We also need to strip and lower our aliases just in case
+                clean_aliases = [alias.lower().strip() for alias in aliases]
+                found_col = next((alias for alias in clean_aliases if alias in uploaded_headers), None)
+                if found_col:
+                    actual_column_names[db_key] = found_col
+                elif db_key in REQUIRED_FIELDS:
+                    missing_critical.append(db_key.upper())
+
+            if missing_critical:
+                error_msg = f"Excel format error! Missing critical columns: {', '.join(missing_critical)}. Upload aborted!"
                 return Response({"error": error_msg}, status=status.HTTP_400_BAD_REQUEST)
 
             df = df.fillna('')
-            df.columns = df.columns.str.strip().str.lower()
             
+            # 4. Master Data Fetches
             valid_orders = set(OrderReport.objects.values_list('order_id', flat=True))
             firm_map = {f.lower(): f for f in Firm.objects.values_list('name', flat=True)}
             location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
             valid_models = {m.asin_fsn.lower(): (m.model_name, m.model) for m in ProductModel.objects.all()}
-            
             existing_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
             
             missing_order_count = missing_invoice_count = dup_invoice_count = master_mismatch_count = 0
             file_invoices = set()
 
-            # --- 🔥 ULTRA BULLETPROOF EXTRACTORS 🔥 ---
-            def get_num(row_data, keys):
-                for k in keys:
-                    if k in row_data:
-                        val = row_data[k]
-                        if pd.notna(val) and val != '' and str(val).strip().lower() not in ['nan', 'none', 'null']:
-                            try: return float(str(val).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip())
-                            except: pass
-                return 0.0
-
-            def get_str(row_data, keys):
-                for k in keys:
-                    if k in row_data:
-                        val = row_data[k]
-                        if pd.notna(val) and str(val).strip().lower() not in ['nan', 'none', 'null', '']:
-                            return str(val).strip()
-                return ''
+            # --- Extractors ---
+            def get_val(row_data, db_field_key, return_type='str'):
+                col_name = actual_column_names.get(db_field_key)
+                if not col_name or col_name not in row_data:
+                    return 0.0 if return_type == 'num' else ''
+                
+                val = row_data[col_name]
+                if pd.isna(val) or str(val).strip().lower() in ['nan', 'none', 'null', '']:
+                    return 0.0 if return_type == 'num' else ''
+                
+                if return_type == 'num':
+                    try: return float(str(val).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip())
+                    except: return 0.0
+                return str(val).strip()
 
             # --- VALIDATION LOOP ---
             for index, row in df.iterrows():
-                order_id = get_str(row, ['order id', 'order_id'])
+                order_id = get_val(row, 'order_id')
                 if not order_id: continue
 
-                invoice_no = get_str(row, ['invoice no', 'invoice_no'])
-                raw_asin_fsn = get_str(row, ['asin/fsn', 'asin_fsn', 'fsn']).lower()
-                raw_model_name = get_str(row, ['model name', 'model_name']).lower()
-                raw_model_no = get_str(row, ['model', 'model no', 'model number']).lower()
-                raw_firm = get_str(row, ['firm']).lower()
-                raw_location = get_str(row, ['location']).lower()
+                invoice_no = get_val(row, 'invoice_no')
+                raw_asin_fsn = get_val(row, 'asin_fsn').lower()
+                raw_firm = get_val(row, 'firm').lower()
+                raw_location = get_val(row, 'location').lower()
 
                 asin_fsn = list(valid_models.keys())[list(valid_models.keys()).index(raw_asin_fsn)] if raw_asin_fsn in valid_models else None
                 firm = firm_map.get(raw_firm)
@@ -582,21 +592,14 @@ class InvoiceShipmentUploadView(APIView):
 
                 if order_id not in valid_orders: missing_order_count += 1
                 
-                # 🔥 STRICT INVOICE UNIQUE CHECK 🔥
                 if not invoice_no: missing_invoice_count += 1
                 else:
                     if invoice_no in existing_invoices or invoice_no in file_invoices: dup_invoice_count += 1
                     file_invoices.add(invoice_no)
 
-                if raw_firm and not firm: master_mismatch_count += 1
-                if raw_location and not location: master_mismatch_count += 1
-                
-                if asin_fsn:
-                    db_model_name, db_model_no = valid_models[asin_fsn]
-                    if raw_model_name and raw_model_name != db_model_name.lower(): master_mismatch_count += 1
-                    if raw_model_no and raw_model_no != str(db_model_no).lower(): master_mismatch_count += 1
-                else:
-                    if raw_asin_fsn: master_mismatch_count += 1 
+                if actual_column_names.get('firm') and raw_firm and not firm: master_mismatch_count += 1
+                if actual_column_names.get('location') and raw_location and not location: master_mismatch_count += 1
+                if not asin_fsn and raw_asin_fsn: master_mismatch_count += 1 
 
             error_segments = []
             if missing_order_count > 0: error_segments.append(f"{missing_order_count} Order ID(s) not found in Master")
@@ -611,8 +614,8 @@ class InvoiceShipmentUploadView(APIView):
             # --- SMART SAVE LOOP ---
             records = []
             for index, row in df.iterrows():
-                order_id = get_str(row, ['order id', 'order_id'])
-                raw_asin_fsn = get_str(row, ['asin/fsn', 'asin_fsn', 'fsn']).lower()
+                order_id = get_val(row, 'order_id')
+                raw_asin_fsn = get_val(row, 'asin_fsn').lower()
                 
                 if not order_id or not raw_asin_fsn: continue
                 
@@ -622,13 +625,12 @@ class InvoiceShipmentUploadView(APIView):
                 order_data = OrderReport.objects.filter(order_id=order_id, asin_fsn__iexact=asin_fsn).first()
                 
                 if order_data:
-                    raw_inv_date = get_str(row, ['invoice date', 'invoice_date'])
+                    raw_inv_date = get_val(row, 'invoice_date')
                     invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d') if raw_inv_date else None
                     
-                    raw_del_date = get_str(row, ['delivery date', 'delivery_date', 'del date'])
+                    raw_del_date = get_val(row, 'delivery_date')
                     delivery_date = pd.to_datetime(raw_del_date, dayfirst=True).strftime('%Y-%m-%d') if raw_del_date else None
 
-                    # Construct Payload with Extracted Fields
                     records.append(InvoiceShipment(
                         order_id=order_data.order_id,
                         txn_date=order_data.txn_date,
@@ -639,25 +641,25 @@ class InvoiceShipmentUploadView(APIView):
                         model_no=order_data.model_no,
                         unit_price=order_data.unit_price, 
                         
-                        seller_name=get_str(row, ['seller name', 'seller_name']),
-                        seller_gstn=get_str(row, ['seller gstn', 'seller_gstn']),
+                        seller_name=get_val(row, 'seller_name'),
+                        seller_gstn=get_val(row, 'seller_gstn'),
                         
-                        invoice_no=get_str(row, ['invoice no', 'invoice_no']),
+                        invoice_no=get_val(row, 'invoice_no'),
                         invoice_date=invoice_date,
-                        invoice_qty=int(get_num(row, ['invoice qty', 'inv qty', 'invoice_qty']) or 1),
-                        invoice_amount=get_num(row, ['invoice amount', 'inv amount', 'inv amt', 'invoice_amount']),
+                        invoice_qty=int(get_val(row, 'invoice_qty', 'num') or 1),
+                        invoice_amount=get_val(row, 'invoice_amount', 'num'),
                         
-                        tracking_id=get_str(row, ['tracking id', 'tracking_id', 'awb']),
-                        delivery_status=get_str(row, ['delivery status', 'delivery_status', 'status']) or "Pending",
+                        tracking_id=get_val(row, 'tracking_id'),
+                        delivery_status=get_val(row, 'delivery_status') or "Pending",
                         delivery_date=delivery_date,
-                        cancel_reason=get_str(row, ['cancel reason', 'reason', 'action remarks'])
+                        cancel_reason=get_val(row, 'cancel_reason')
                     ))
             
             InvoiceShipment.objects.bulk_create(records)
-            return Response({"message": f"{len(records)} Shipments bulk uploaded successfully!"}, status=status.HTTP_201_CREATED)
+            return Response({"message": f"{len(records)} Shipments extracted and uploaded successfully!"}, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": f"Upload Processing Error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 
