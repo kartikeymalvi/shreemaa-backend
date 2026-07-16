@@ -191,19 +191,18 @@ class BulkUploadExcelView(APIView):
                     asin_fsn=asin_fsn,
                     model_name=get_val(row, 'model_name'),
                     
-                    # 🔥 YE 4 LINES UPDATE KI HAIN (Aapke models.py ke exact naam) 🔥
+                    # 🔥 EXACT MATCH FROM YOUR MODELS.PY 🔥
                     model_no=get_val(row, 'model'), 
-                    quantity=int(get_val(row, 'qty', 'num') or 1),
+                    order_qty=int(get_val(row, 'qty', 'num') or 1),
                     order_amount=get_val(row, 'order_amt', 'num'),
-                    payment_mode=get_val(row, 'payment'),
-                    # -------------------------------------------------------------
                     
                     unit_price=get_val(row, 'unit_price', 'num'),
-                    card_offer=get_val(row, 'card_offer', 'num'), # Isko bhi number kiya hai
+                    card_offer=get_val(row, 'card_offer', 'num'),
                     card_no=get_val(row, 'card_no'),
                     placed_by=get_val(row, 'placed_by'),
                     seller_name=get_val(row, 'seller_name'),
-                    seller_gstn=get_val(row, 'seller_gstn')
+                    seller_gstn=get_val(row, 'seller_gstn'),
+                    payment_amount=get_val(row, 'payment')
                 ))
             
             # ignore_conflicts=True handles duplicate rows safely without throwing 500
