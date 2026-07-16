@@ -190,12 +190,16 @@ class BulkUploadExcelView(APIView):
                     location=get_val(row, 'location'),
                     asin_fsn=asin_fsn,
                     model_name=get_val(row, 'model_name'),
-                    model=get_val(row, 'model'),
-                    qty=int(get_val(row, 'qty', 'num') or 1),
-                    order_amt=get_val(row, 'order_amt', 'num'),
+                    
+                    # 🔥 YE 4 LINES UPDATE KI HAIN (Aapke models.py ke exact naam) 🔥
+                    model_no=get_val(row, 'model'), 
+                    quantity=int(get_val(row, 'qty', 'num') or 1),
+                    order_amount=get_val(row, 'order_amt', 'num'),
+                    payment_mode=get_val(row, 'payment'),
+                    # -------------------------------------------------------------
+                    
                     unit_price=get_val(row, 'unit_price', 'num'),
-                    payment=get_val(row, 'payment'),
-                    card_offer=get_val(row, 'card_offer'),
+                    card_offer=get_val(row, 'card_offer', 'num'), # Isko bhi number kiya hai
                     card_no=get_val(row, 'card_no'),
                     placed_by=get_val(row, 'placed_by'),
                     seller_name=get_val(row, 'seller_name'),
