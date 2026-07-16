@@ -76,12 +76,7 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
 
         return queryset
 
-import pandas as pd
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from .models import OrderReport, Firm, Location, Merchant, ProductModel
+
 
 class BulkUploadExcelView(APIView):
     permission_classes = [IsAuthenticated]
@@ -103,7 +98,7 @@ class BulkUploadExcelView(APIView):
                 'order_id', 'txn date', 'month', 'day', 'txn detail',
                 'merchant', 'merchant_id', 'firm', 'location', 'asin/fsn',
                 'model name', 'model', 'qty', 'order amt', 'unit price',
-                'payment', 'card offer', 'status',
+                'payment', 'card offer', 'status','card_no','placed_by'
             ]
 
             missing_headers = []
