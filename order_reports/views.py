@@ -169,7 +169,7 @@ class BulkUploadExcelView(APIView):
                 asin_fsn = get_val(row, 'asin_fsn')
                 
                 if not order_id or not asin_fsn: 
-                    continue
+                    continue    
                 
                 raw_txn_date = get_val(row, 'txn_date')
                 try:
