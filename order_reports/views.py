@@ -464,44 +464,41 @@ class InvoiceShipmentUploadView(APIView):
             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # 1. Read File
+            # 1. Read File with Encoding Fail-Safe
             if file.name.endswith('.csv'): 
-                df = pd.read_csv(file)
+                try:
+                    df = pd.read_csv(file)
+                except UnicodeDecodeError:
+                    file.seek(0)
+                    df = pd.read_csv(file, encoding='cp1252') 
             else: 
                 df = pd.read_excel(file)
             
             # --- 🔥 SMART EXCEL HEADER MAPPING 🔥 ---
-            # NOTE: DataFrame converts all headers to lower case and strips spaces later, 
-            # so we map to the exact lower-case string.
+            # Aapki batayi hui sheet ke exact names
             column_map = {
                 'order_id': ['order id'],
-                'txn_date': ['order date'], # Order Date in CSV corresponds to txn_date
-                'asin_fsn': ['asin'],
+                'txn_date': ['order date'], 
+                'firm': ['account group'], # Account Group map kar diya Firm se
+                'location': ['shipping address'], # Location map ho rahi hai Shipping Address se
                 'seller_name': ['seller name'],
-                'seller_gstn': ['seller gstin'],
-                'invoice_no': ['invoice number'],
+                'seller_gstn': ['seller gstn', 'seller gstin'],
+                'invoice_no': ['invoice number', 'invoice no'],
                 'invoice_date': ['invoice date'],
-                'invoice_qty': ['item quantity'], # Item Quantity from CSV
-                'invoice_amount': ['item net total'], # Item Net Total from CSV
-                'tracking_id': ['carrier tracking #'],
-                'delivery_status': ['delivery status'],
-                'delivery_date': ['expected delivery date'], # Or any actual delivery date column if present
-                'cancel_reason': ['cancel reason', 'action remarks'], # If these exist in your business logic
-                'firm': ['firm', 'company'], # Might not be in this raw sheet
-                'location': ['shipping address'] # Using Shipping Address for location
+                'invoice_qty': ['shipment quantity', 'item quantity'], # Map updated
+                'invoice_amount': ['invoice total amount', 'item net total'], # Map updated
+                'tracking_id': ['carrier tracking #', 'tracking id']
             }
 
-            # 2. Normalize uploaded headers
+            # Normalize headers
             df.columns = df.columns.str.strip().str.lower()
             uploaded_headers = set(df.columns)
             
-            # 3. Dynamic Validation: Check if at least one alias exists for MUST-HAVE fields
-            REQUIRED_FIELDS = ['order_id', 'invoice_no', 'asin_fsn'] 
+            # Validation
+            REQUIRED_FIELDS = ['order_id', 'invoice_no'] 
             missing_critical = []
-            
             actual_column_names = {} 
             for db_key, aliases in column_map.items():
-                # We also need to strip and lower our aliases just in case
                 clean_aliases = [alias.lower().strip() for alias in aliases]
                 found_col = next((alias for alias in clean_aliases if alias in uploaded_headers), None)
                 if found_col:
@@ -516,16 +513,20 @@ class InvoiceShipmentUploadView(APIView):
             df = df.fillna('')
             
             # 4. Master Data Fetches
-            valid_orders = set(OrderReport.objects.values_list('order_id', flat=True))
-            firm_map = {f.lower(): f for f in Firm.objects.values_list('name', flat=True)}
-            location_map = {l.lower(): l for l in Location.objects.values_list('name', flat=True)}
-            valid_models = {m.asin_fsn.lower(): (m.model_name, m.model) for m in ProductModel.objects.all()}
+            # Fetch valid locations for exact match filtering inside the address string
+            valid_locations_list = list(Location.objects.values_list('name', flat=True))
+            valid_locations_lower = [loc.lower() for loc in valid_locations_list]
+            
+            # Fetch all orders at once to avoid querying inside the loop (Speed Optimization)
+            all_orders = {order.order_id: order for order in OrderReport.objects.all()}
+
             existing_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
             
-            missing_order_count = missing_invoice_count = dup_invoice_count = master_mismatch_count = 0
             file_invoices = set()
+            missing_order_count = 0
+            dup_invoice_count = 0
 
-            # --- Extractors ---
+            # --- Extractor Utility ---
             def get_val(row_data, db_field_key, return_type='str'):
                 col_name = actual_column_names.get(db_field_key)
                 if not col_name or col_name not in row_data:
@@ -540,87 +541,87 @@ class InvoiceShipmentUploadView(APIView):
                     except: return 0.0
                 return str(val).strip()
 
-            # --- VALIDATION LOOP ---
+            # --- SMART SAVE LOOP ---
+            records = []
             for index, row in df.iterrows():
                 order_id = get_val(row, 'order_id')
                 if not order_id: continue
 
                 invoice_no = get_val(row, 'invoice_no')
-                raw_asin_fsn = get_val(row, 'asin_fsn').lower()
-                raw_firm = get_val(row, 'firm').lower()
-                raw_location = get_val(row, 'location').lower()
-
-                asin_fsn = list(valid_models.keys())[list(valid_models.keys()).index(raw_asin_fsn)] if raw_asin_fsn in valid_models else None
-                firm = firm_map.get(raw_firm)
-                location = location_map.get(raw_location)
-
-                if order_id not in valid_orders: missing_order_count += 1
                 
-                if not invoice_no: missing_invoice_count += 1
+                # Check duplicates and missing core orders
+                if order_id not in all_orders: 
+                    missing_order_count += 1
+                    continue
+                
+                if not invoice_no: 
+                    continue
                 else:
-                    if invoice_no in existing_invoices or invoice_no in file_invoices: dup_invoice_count += 1
+                    if invoice_no in existing_invoices or invoice_no in file_invoices: 
+                        dup_invoice_count += 1
+                        continue # Skip saving duplicates
                     file_invoices.add(invoice_no)
 
-                if actual_column_names.get('firm') and raw_firm and not firm: master_mismatch_count += 1
-                if actual_column_names.get('location') and raw_location and not location: master_mismatch_count += 1
-                if not asin_fsn and raw_asin_fsn: master_mismatch_count += 1 
-
-            error_segments = []
-            if missing_order_count > 0: error_segments.append(f"{missing_order_count} Order ID(s) not found in Master")
-            if missing_invoice_count > 0: error_segments.append(f"{missing_invoice_count} Missing Invoice No(s)")
-            if dup_invoice_count > 0: error_segments.append(f"{dup_invoice_count} Duplicate Invoice No(s)")
-            if master_mismatch_count > 0: error_segments.append(f"{master_mismatch_count} Master Data Mismatch(es)")
-
-            if error_segments:
-                total_errors = missing_order_count + missing_invoice_count + dup_invoice_count + master_mismatch_count
-                return Response({"error": f"Validation Failed! Found: {', '.join(error_segments)}. Total {total_errors} errors. No records saved!"}, status=status.HTTP_400_BAD_REQUEST)
-
-            # --- SMART SAVE LOOP ---
-            records = []
-            for index, row in df.iterrows():
-                order_id = get_val(row, 'order_id')
-                raw_asin_fsn = get_val(row, 'asin_fsn').lower()
+                # Linking with Core OrderReport Data (Auto Fetching Fields)
+                order_data = all_orders[order_id]
                 
-                if not order_id or not raw_asin_fsn: continue
+                # 🔥 SMART LOCATION EXTRACTION 🔥
+                raw_shipping_address = get_val(row, 'location').lower()
+                final_location = ""
                 
-                asin_fsn = [k for k in valid_models.keys() if k == raw_asin_fsn][0] if raw_asin_fsn in valid_models else raw_asin_fsn
-
-                # Linking with Core Order
-                order_data = OrderReport.objects.filter(order_id=order_id, asin_fsn__iexact=asin_fsn).first()
+                if raw_shipping_address:
+                    for i, loc_lower in enumerate(valid_locations_lower):
+                        if loc_lower in raw_shipping_address:
+                            # Location matched with Master Location
+                            final_location = valid_locations_list[i]
+                            break
                 
-                if order_data:
-                    raw_inv_date = get_val(row, 'invoice_date')
+                # Handling Date Formatting (Invoice Date)
+                raw_inv_date = get_val(row, 'invoice_date')
+                try:
                     invoice_date = pd.to_datetime(raw_inv_date, dayfirst=True).strftime('%Y-%m-%d') if raw_inv_date else None
-                    
-                    raw_del_date = get_val(row, 'delivery_date')
-                    delivery_date = pd.to_datetime(raw_del_date, dayfirst=True).strftime('%Y-%m-%d') if raw_del_date else None
+                except:
+                    invoice_date = None
 
-                    records.append(InvoiceShipment(
-                        order_id=order_data.order_id,
-                        txn_date=order_data.txn_date,
-                        firm=order_data.firm,
-                        location=order_data.location,
-                        asin_fsn=order_data.asin_fsn,
-                        model_name=order_data.model_name,
-                        model_no=order_data.model_no,
-                        unit_price=order_data.unit_price, 
-                        
-                        seller_name=get_val(row, 'seller_name'),
-                        seller_gstn=get_val(row, 'seller_gstn'),
-                        
-                        invoice_no=get_val(row, 'invoice_no'),
-                        invoice_date=invoice_date,
-                        invoice_qty=int(get_val(row, 'invoice_qty', 'num') or 1),
-                        invoice_amount=get_val(row, 'invoice_amount', 'num'),
-                        
-                        tracking_id=get_val(row, 'tracking_id'),
-                        delivery_status=get_val(row, 'delivery_status') or "Pending",
-                        delivery_date=delivery_date,
-                        cancel_reason=get_val(row, 'cancel_reason')
-                    ))
+                records.append(InvoiceShipment(
+                    # Autofilled from OrderReports Master Table
+                    order_id=order_data.order_id,
+                    txn_date=order_data.txn_date,
+                    asin_fsn=order_data.asin_fsn,
+                    model_name=order_data.model_name,
+                    model_no=order_data.model_no,
+                    unit_price=order_data.unit_price, 
+                    order_qty=order_data.order_qty,
+                    order_amount=order_data.order_amount,
+
+                    # Extracted directly from Excel Row
+                    firm=get_val(row, 'firm'), # Account group
+                    location=final_location, # Filtered master location
+                    seller_name=get_val(row, 'seller_name'),
+                    seller_gstn=get_val(row, 'seller_gstn'),
+                    
+                    invoice_no=invoice_no,
+                    invoice_date=invoice_date,
+                    invoice_qty=int(get_val(row, 'invoice_qty', 'num') or 1),
+                    invoice_amount=get_val(row, 'invoice_amount', 'num'),
+                    
+                    tracking_id=get_val(row, 'tracking_id'),
+                    delivery_status="Pending" # Default status
+                ))
             
-            InvoiceShipment.objects.bulk_create(records)
-            return Response({"message": f"{len(records)} Shipments extracted and uploaded successfully!"}, status=status.HTTP_201_CREATED)
+            # Feedback errors if any files were missed
+            error_segments = []
+            if missing_order_count > 0: error_segments.append(f"Skipped {missing_order_count} row(s): Order ID not found in Master")
+            if dup_invoice_count > 0: error_segments.append(f"Skipped {dup_invoice_count} row(s): Duplicate Invoice No")
+
+            if records:
+                InvoiceShipment.objects.bulk_create(records, ignore_conflicts=True)
+                msg = f"{len(records)} Shipments extracted and uploaded successfully!"
+                if error_segments:
+                    msg += f" (Note: {', '.join(error_segments)})"
+                return Response({"message": msg}, status=status.HTTP_201_CREATED)
+            else:
+                return Response({"error": f"No valid new records found to save. {', '.join(error_segments)}"}, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
             return Response({"error": f"Upload Processing Error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
