@@ -71,7 +71,7 @@ urlpatterns = [
     path('export/invoices/', ExportInvoiceShipmentExcelView.as_view(), name='export-invoices'),
     path('approvals/<int:pk>/pdf/', DownloadApprovalPDF.as_view(), name='download-approval-pdf'),
 
-    path('orders/<int:pk>/cancel/', cancel_order_to_refund.as_view(), name='cancel-order'),
+    path('orders/<int:pk>/cancel/', cancel_order_to_refund, name='cancel-order'),
 
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
