@@ -181,20 +181,31 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'project.urls'
 
 # 🔥 UPDATE 4: CORS (Vercel ke live URL se request accept karne ke liye)
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False  # Isey hamesha False rakhein jab niche URLs define kiye hon
+CORS_ALLOW_CREDENTIALS = True   # Ye True hona bohot zaroori hai JWT Tokens aur Login ke liye!
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
     "http://localhost:5173",  
     "http://127.0.0.1:5500", 
-    "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://smg-erp.duckdns.org",
     "https://shreemaa-frontend.vercel.app",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://smg-erp.duckdns.org",
+    "https://shreemaa-frontend.vercel.app",
 ]
 
+# (Optional safety) Headers aur methods allow karne ke liye
+CORS_ALLOW_METHODS = [
+    'DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept', 'accept-encoding', 'authorization', 'content-type', 'dnt',
+    'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
+]
 # DRF & JWT Settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
