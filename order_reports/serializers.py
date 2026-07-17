@@ -3,16 +3,40 @@ from django.db import transaction
 from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller,ApprovalRequest, ApprovalItem,GRPORecord,Ticket,RefundRecord
 
 class OrderReportSerializer(serializers.ModelSerializer):
+    # Virtual fields takaki agar DB mein column blank ho toh crash na ho
+    seller_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    seller_gstn = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     class Meta:
         model = OrderReport
         fields = '__all__'
         extra_kwargs = {
             'card_no': {'required': False, 'allow_null': True},
             'placed_by': {'required': False, 'allow_null': True},
-            'seller_gstn': {'required': False, 'allow_null': True},
-            'seller_name': {'required': False, 'allow_null': True},
-            # Baaki auto fields ko bhi optional kwargs me daal sakte hain
+            # seller fields upar explicitly define kar diye hain isliye yahan se hata diye
         }
+
+    # 🔥 MAGIC FIX: API response bhejne se pehle data intercept aur auto-fill karega 🔥
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        
+        # Check agar seller_name blank hai ya '-' hai
+        if not data.get('seller_name') or data.get('seller_name') == '-':
+            # Local import taaki koi circular import error na aaye
+            from .models import InvoiceShipment
+            # Usi order_id ki pehli InvoiceShipment dhundho jisme Seller details actually bhari hui hon
+            ship = InvoiceShipment.objects.filter(
+                order_id=instance.order_id
+            ).exclude(seller_name__exact='').exclude(seller_name__isnull=True).first()
+            
+            if ship:
+                data['seller_name'] = ship.seller_name
+                data['seller_gstn'] = ship.seller_gstn
+            else:
+                data['seller_name'] = '-'
+                data['seller_gstn'] = '-'
+                
+        return data
 
     # 🔥 STRICT VALIDATION: Order ID + ASIN Combo Check (Manual Entry ke liye)
     def validate(self, data):
@@ -34,7 +58,7 @@ class OrderReportSerializer(serializers.ModelSerializer):
                     "error": f"Order ID '{order_id}' aur ASIN '{asin_fsn}' ki entry pehle se exist karti hai! Ek hi item do baar add nahi kar sakte."
                 })
                 
-        return data 
+        return data
 
    
 class ColumnVisibilityPolicySerializer(serializers.ModelSerializer):

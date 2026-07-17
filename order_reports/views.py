@@ -701,10 +701,15 @@ class OrderSummaryView(APIView):
             # 2. SIRF usi Order ID aur usi FSN ka data fetch karo (No Merging)
             shipments = InvoiceShipment.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
             
-            # 💡 SAFE FIX: Pehli shipment fetch karna taaki wahan se Seller Details mil sakein
-            first_ship = shipments.first()
-            seller_name_fetched = first_ship.seller_name if first_ship and first_ship.seller_name else "-"
-            seller_gstn_fetched = first_ship.seller_gstn if first_ship and first_ship.seller_gstn else "-"
+            # 🔥 SAFE FIX: Sirf wahi shipment lo jisme actually seller name ho 🔥
+            first_ship = shipments.exclude(seller_name__exact='').exclude(seller_name__isnull=True).first()
+            
+            seller_name_fetched = first_ship.seller_name if first_ship else getattr(order, 'seller_name', '-')
+            seller_gstn_fetched = first_ship.seller_gstn if first_ship else getattr(order, 'seller_gstn', '-')
+
+            # Fallback for empty strings
+            if not seller_name_fetched or str(seller_name_fetched).strip() == '': seller_name_fetched = '-'
+            if not seller_gstn_fetched or str(seller_gstn_fetched).strip() == '': seller_gstn_fetched = '-'
 
             inwards = InwardRecord.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
             refunds = RefundRecord.objects.filter(order_id=target_order_id) # Refund direct Order ID se nikal rahe hain
