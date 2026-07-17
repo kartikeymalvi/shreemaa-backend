@@ -22,7 +22,9 @@ from .views import (
     ApprovalViewSet,
     GRPORecordViewSet,
     DownloadApprovalPDF,
-    TicketViewSet
+    TicketViewSet,
+    RefundRecordViewSet,
+    cancel_order_to_refund
 )
 
 # Naye master routes ke liye router
@@ -41,6 +43,7 @@ router.register(r'approvals', ApprovalViewSet, basename='approval')
 
 #--------------INVOICE-SHIPMENT ROUTE --------------------
 router.register(r'shipments', InvoiceShipmentViewSet, basename='shipments')
+router.register(r'refunds', RefundRecordViewSet, basename='refund')
 
 urlpatterns = [
     # bulk -delete path ---
@@ -67,6 +70,8 @@ urlpatterns = [
     path('export/orders/', ExportOrderReportsExcelView.as_view(), name='export-orders'),
     path('export/invoices/', ExportInvoiceShipmentExcelView.as_view(), name='export-invoices'),
     path('approvals/<int:pk>/pdf/', DownloadApprovalPDF.as_view(), name='download-approval-pdf'),
+
+    path('orders/<int:pk>/cancel/', cancel_order_to_refund.as_view(), name='cancel-order'),
 
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)

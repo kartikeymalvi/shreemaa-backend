@@ -22,6 +22,7 @@ class OrderReport(models.Model):
     merchant_id = models.CharField(max_length=100, null=True, blank=True)
     firm = models.CharField(max_length=100, null=True, blank=True)
     location = models.CharField(max_length=100, null=True, blank=True)
+    sap_po_no = models.CharField(max_length=255, null=True, blank=True)
     
     # Merged Field
     asin_fsn = models.CharField(max_length=100, null=True, blank=True)
@@ -433,4 +434,63 @@ class Ticket(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return str(self.ticket_no)        
+        return str(self.ticket_no)     
+
+class RefundRecord(models.Model):
+    # Auto-fetched columns
+    source_date = models.CharField(max_length=50, null=True, blank=True) # Invoice del_date ya Order date
+    firm = models.CharField(max_length=200, null=True, blank=True)
+    merchant = models.CharField(max_length=200, null=True, blank=True)
+    order_id = models.CharField(max_length=150, null=True, blank=True)
+    invoice_no = models.CharField(max_length=150, null=True, blank=True)
+    model_name = models.CharField(max_length=255, null=True, blank=True)
+    invoice_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
+    # Manual Input (Update Button se aayenge)
+    refund_type = models.CharField(max_length=100, null=True, blank=True) 
+    refund_status = models.CharField(max_length=100, default='Pending', null=True, blank=True)
+    received_date = models.DateField(null=True, blank=True)
+    received_txn_type = models.CharField(max_length=100, null=True, blank=True)
+    received_card_no = models.CharField(max_length=100, null=True, blank=True)
+    received_comment = models.TextField(null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+
+    def __str__(self):
+        return f"Refund for {self.order_id}"
+    @receiver([post_save], sender=InvoiceShipment)
+    def auto_refund_from_shipment(sender, instance, **kwargs):
+        # Rule: Agar order Complete hai aur ye shipment Cancel hui hai -> Send to Refund
+        orders = OrderReport.objects.filter(order_id=instance.order_id, asin_fsn=instance.asin_fsn)
+        if orders.exists() and instance.delivery_status == 'Cancelled':
+            order = orders.first()
+            if order.order_status == 'Complete':
+                RefundRecord.objects.get_or_create(
+                    order_id=instance.order_id,
+                    invoice_no=instance.invoice_no,
+                    defaults={
+                        'source_date': instance.delivery_date or instance.invoice_date,
+                        'firm': instance.firm,
+                        'merchant': order.merchant,
+                        'model_name': instance.model_name,
+                        'invoice_amount': instance.invoice_amount,
+                        'received_comment': 'Auto-generated from Cancelled Shipment'
+                    }
+                )
+
+    @receiver([post_save], sender=Ticket)
+    def auto_refund_from_ticket(sender, instance, **kwargs):
+        # Rule: Agar Ticket Closed hui -> Send to Refund
+        if instance.ticket_status == 'Closed':
+            RefundRecord.objects.get_or_create(
+                order_id=instance.order_id,
+                invoice_no=instance.invoice_no,
+                defaults={
+                    'source_date': instance.invoice_date or instance.raised_date,
+                    'firm': '', 
+                    'merchant': instance.merchant,
+                    'model_name': instance.model,
+                    'invoice_amount': instance.discrepancy_amount,
+                    'received_comment': 'Auto-generated from Closed Ticket'
+                }
+            )

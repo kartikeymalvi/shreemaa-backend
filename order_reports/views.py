@@ -6,7 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer
 import pandas as pd
 from rest_framework.decorators import action
 from django.db.models import Q
@@ -454,6 +454,23 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
             # 🛑 500 ERROR FAIL-SAFE: Agar database schema aur query me mismatch hua, toh server crash hone ki bajaye safely handle ho jayega
             print(f"🔥 Error fetching InvoiceShipments: {str(e)}")
             return InvoiceShipment.objects.none()
+    @action(detail=False, methods=['post'])
+    def bulk_update_status(self, request):
+        ids = request.data.get('ids', [])
+        new_status = request.data.get('delivery_status')
+        new_date = request.data.get('delivery_date')
+        
+        if not ids: return Response({"error": "No IDs selected!"}, status=400)
+        
+        updated = 0
+        # Loop se save karenge taaki auto-refund wale Signals trigger ho sakein
+        for shipment in InvoiceShipment.objects.filter(id__in=ids):
+            if new_status: shipment.delivery_status = new_status
+            if new_date: shipment.delivery_date = new_date
+            shipment.save()
+            updated += 1
+            
+        return Response({"message": f"Successfully updated {updated} shipments."})
 
 class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -683,8 +700,14 @@ class OrderSummaryView(APIView):
             
             # 2. SIRF usi Order ID aur usi FSN ka data fetch karo (No Merging)
             shipments = InvoiceShipment.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
+            
+            # 💡 SAFE FIX: Pehli shipment fetch karna taaki wahan se Seller Details mil sakein
+            first_ship = shipments.first()
+            seller_name_fetched = first_ship.seller_name if first_ship and first_ship.seller_name else "-"
+            seller_gstn_fetched = first_ship.seller_gstn if first_ship and first_ship.seller_gstn else "-"
+
             inwards = InwardRecord.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
-            refunds = RefundRecord.objects.filter(order_id=target_order_id, asin_fsn=target_asin)
+            refunds = RefundRecord.objects.filter(order_id=target_order_id) # Refund direct Order ID se nikal rahe hain
             
             # 3. Delivered Calculations
             delivered_shipments = shipments.filter(delivery_status='Delivered')
@@ -703,9 +726,9 @@ class OrderSummaryView(APIView):
             short_qty = inwards.aggregate(Sum('short_qty'))['short_qty__sum'] or 0
             short_amount = float(inwards.aggregate(Sum('short_amount'))['short_amount__sum'] or 0.0)
 
-            # 6. Refund Calculations
-            refund_qty = refunds.aggregate(Sum('refund_qty'))['refund_qty__sum'] or 0
-            refund_amount = float(refunds.aggregate(Sum('refund_amount'))['refund_amount__sum'] or 0.0)
+            # 6. Refund Calculations (Ab naye RefundRecord se aayenge)
+            refund_qty = refunds.count() # Kitni items refund hui
+            refund_amount = float(refunds.aggregate(Sum('invoice_amount'))['invoice_amount__sum'] or 0.0)
 
             # 7. Pending Calculations (Single Item Formula)
             pending_qty = order.order_qty - delivered_qty - cancel_qty
@@ -718,7 +741,7 @@ class OrderSummaryView(APIView):
                 order.order_status = calculated_status
                 order.save()
 
-            # 9. Final Response
+            # 9. Final Response Data (Isme aapki saari naye fields hain)
             summary_data = {
                 "order_id": target_order_id,
                 "txn_date": order.txn_date,
@@ -728,6 +751,15 @@ class OrderSummaryView(APIView):
                 "order_amount": float(order.order_amount),
                 "order_status": calculated_status,
                 
+                # 🔥 NEW FIELDS REQUESTED BY YOU 🔥
+                "card_no": order.card_no or "-",
+                "placed_by": order.placed_by or "-",
+                "sap_po_no": getattr(order, 'sap_po_no', '-'), # getattr safe hota hai agar db migrate na hua ho
+                "seller_name": seller_name_fetched, # Shipment se fetched
+                "seller_gstn": seller_gstn_fetched, # Shipment se fetched
+                "cn_amount": float(getattr(order, 'cn_amount', 0.0)),
+                
+                # Metrics
                 "delivered_qty": delivered_qty,
                 "delivered_amount": delivered_amount,
                 "cancel_qty": cancel_qty,
@@ -740,13 +772,17 @@ class OrderSummaryView(APIView):
                 "pending_amount": round(pending_amount, 2),
                 "pending_refund_amount": round(pending_refund_amount, 2),
                 "inward_qty": inward_qty, 
-                "inward_amount": inward_amount
+                "inward_amount": inward_amount,
+                "grpo_qty": order.grpo_qty,
+                "grpo_amount": float(order.grpo_amount)
             }
             
             return Response(summary_data, status=200)
             
         except OrderReport.DoesNotExist:
             return Response({"error": "Order not found"}, status=404)
+        except Exception as e:
+            return Response({"error": f"Error: {str(e)}"}, status=400)
         
 
 class ExportOrderReportsExcelView(APIView):
@@ -952,8 +988,11 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         
         if user_role == 'ADMIN' or self.request.user.is_superuser or self.request.user.is_staff:
             return ApprovalRequest.objects.all().order_by('-id')
-        # Normal user ko sirf khud ke banaye requests dikhenge
-        return ApprovalRequest.objects.filter(requested_by=username).order_by('-id')
+            
+        # 🔥 FIX: Normal user ko wo records dikhenge jahan wo 'Requested By' YA 'Placed By' hai (Case-insensitive match)
+        return ApprovalRequest.objects.filter(
+            Q(requested_by__iexact=username) | Q(placed_by__iexact=username)
+        ).order_by('-id')
 
     @action(detail=False, methods=['get'])
     def dropdown_data(self, request):
@@ -1259,3 +1298,33 @@ class DownloadApprovalPDF(APIView):
 class TicketViewSet(viewsets.ModelViewSet):
     queryset = Ticket.objects.all().order_by('-id')
     serializer_class = TicketSerializer
+
+class RefundRecordViewSet(viewsets.ModelViewSet):
+    queryset = RefundRecord.objects.all().order_by('-id')
+    serializer_class = RefundRecordSerializer
+    permission_classes = [IsAuthenticated]
+
+
+# --- ORDER CANCEL API (Manual Cancel in Order Report) ---
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_order_to_refund(request, pk):
+    try:
+        order = OrderReport.objects.get(pk=pk)
+        order.order_status = 'Complete' # Aapki requirement: "status completed ho jayega iska"
+        order.save()
+        
+        # Add to Refund Tab
+        RefundRecord.objects.create(
+            source_date=order.txn_date,
+            firm=order.firm,
+            merchant=order.merchant,
+            order_id=order.order_id,
+            invoice_no="-", # Direct order cancel me invoice nahi hota
+            model_name=order.model_name,
+            invoice_amount=order.order_amount,
+            received_comment="cancel confirmed"
+        )
+        return Response({"message": "Order Cancelled and Moved to Refunds!"})
+    except Exception as e:
+        return Response({"error": str(e)}, status=400)
