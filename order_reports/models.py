@@ -227,18 +227,8 @@ class InwardRecord(models.Model):
         return f"Order: {self.order_id} | Inward: {self.inward_qty} | Short: {self.short_qty}"
 
 
-# --- REFUND TRACKING MODEL ---
-class RefundRecord(models.Model):
-    # Linking fields (Order ko pehchanne ke liye)
-    order_id = models.CharField(max_length=100)
-    asin_fsn = models.CharField(max_length=100)
-    
-    # Direct fields for Screenshot Boxes
-    refund_qty = models.IntegerField(default=0)                                      # Box 13
-    refund_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00) # Box 14
 
-    def __str__(self):
-        return f"Order: {self.order_id} | Refund Amount: ₹{self.refund_amount}"
+
 
 
 # 🔥 AUTO STATUS UPDATE SIGNAL
@@ -434,7 +424,9 @@ class Ticket(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return str(self.ticket_no)     
+        return str(self.ticket_no)   
+
+    # --- REFUND TRACKING MODEL ---  
 
 class RefundRecord(models.Model):
     # Auto-fetched columns
