@@ -245,6 +245,27 @@ class TicketSerializer(serializers.ModelSerializer):
 
 
 class RefundRecordSerializer(serializers.ModelSerializer):
+    # Virtual field in case database me column missing ho
+    invoice_no = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     class Meta:
         model = RefundRecord
-        fields = '__all__'        
+        fields = '__all__'
+
+    # 🔥 PROFESSIONAL INTERCEPTOR: Auto-fetch missing Invoice Number 🔥
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        
+        # Agar invoice_no blank ya '-' hai, toh usey InvoiceShipment se dhoondho
+        if not data.get('invoice_no') or data.get('invoice_no') == '-':
+            from .models import InvoiceShipment
+            ship = InvoiceShipment.objects.filter(
+                order_id=instance.order_id
+            ).exclude(invoice_no__exact='').exclude(invoice_no__isnull=True).first()
+            
+            if ship:
+                data['invoice_no'] = ship.invoice_no
+            else:
+                data['invoice_no'] = '-'
+                
+        return data
