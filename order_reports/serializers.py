@@ -6,6 +6,8 @@ class OrderReportSerializer(serializers.ModelSerializer):
     # Virtual fields takaki agar DB mein column blank ho toh crash na ho
     seller_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     seller_gstn = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    delivered_qty = serializers.SerializerMethodField()
+    delivered_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderReport
@@ -58,6 +60,50 @@ class OrderReportSerializer(serializers.ModelSerializer):
                     "error": f"Order ID '{order_id}' aur ASIN '{asin_fsn}' ki entry pehle se exist karti hai! Ek hi item do baar add nahi kar sakte."
                 })
                 
+        return data
+    def get_delivered_qty(self, obj):
+        shipments = InvoiceShipment.objects.filter(
+            order_id=obj.order_id, 
+            asin_fsn=obj.asin_fsn, 
+            delivery_status='Delivered'
+        )
+        return shipments.aggregate(Sum('invoice_qty'))['invoice_qty__sum'] or 0
+    def get_delivered_amount(self, obj):
+        shipments = InvoiceShipment.objects.filter(
+            order_id=obj.order_id, 
+            asin_fsn=obj.asin_fsn, 
+            delivery_status='Delivered'
+        )
+        return float(shipments.aggregate(Sum('invoice_amount'))['invoice_amount__sum'] or 0.0)
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        
+        if not data.get('seller_name') or data.get('seller_name') == '-':
+            ship = InvoiceShipment.objects.filter(
+                order_id=instance.order_id
+            ).exclude(seller_name__exact='').exclude(seller_name__isnull=True).first()
+            
+            if ship:
+                data['seller_name'] = ship.seller_name
+                data['seller_gstn'] = ship.seller_gstn
+            else:
+                data['seller_name'] = '-'
+                data['seller_gstn'] = '-'
+                
+        return data
+
+    def validate(self, data):
+        order_id = data.get('order_id')
+        asin_fsn = data.get('asin_fsn')
+        
+        if order_id and asin_fsn:
+            existing_record = OrderReport.objects.filter(order_id=order_id, asin_fsn=asin_fsn)
+            if self.instance:
+                existing_record = existing_record.exclude(id=self.instance.id)
+            if existing_record.exists():
+                raise serializers.ValidationError({
+                    "error": f"Order ID '{order_id}' aur ASIN '{asin_fsn}' ki entry pehle se exist karti hai! Ek hi item do baar add nahi kar sakte."
+                })
         return data
 
    
