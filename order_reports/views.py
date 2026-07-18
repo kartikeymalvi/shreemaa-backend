@@ -8,6 +8,7 @@ from rest_framework.exceptions import PermissionDenied
 from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket
 from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer
 import pandas as pd
+from django.db.models import Sum, Count
 from rest_framework.decorators import action
 from django.db.models import Q
 from django.http import HttpResponse
@@ -1333,3 +1334,45 @@ def cancel_order_to_refund(request, pk):
         return Response({"message": "Order Cancelled and Moved to Refunds!"})
     except Exception as e:
         return Response({"error": str(e)}, status=400)
+    
+
+
+# live dashboard API
+
+class DashboardStatsView(APIView):
+    def get(self, request):
+        try:
+            # 1. KPI Calculations
+            total_orders = OrderReport.objects.count()
+            open_orders = OrderReport.objects.filter(order_status='Open').count()
+            completed_orders = OrderReport.objects.filter(order_status='Complete').count()
+            
+            # Total Revenue Calculation
+            revenue_data = OrderReport.objects.aggregate(total_revenue=Sum('order_amount'))
+            total_revenue = float(revenue_data['total_revenue'] or 0.0)
+
+            # 2. Pie Chart (Sales by Merchant)
+            merchants_data = OrderReport.objects.values('merchant').annotate(
+                total_sales=Sum('order_amount')
+            ).order_by('-total_sales')
+
+            pie_data = []
+            for item in merchants_data:
+                merchant_name = item['merchant'] or 'Others'
+                pie_data.append({
+                    "name": merchant_name,
+                    "value": float(item['total_sales'] or 0.0)
+                })
+
+            return Response({
+                "kpis": {
+                    "totalOrders": total_orders,
+                    "openOrders": open_orders,
+                    "completed": completed_orders,
+                    "revenue": total_revenue
+                },
+                "pieData": pie_data
+            }, status=200)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)

@@ -24,7 +24,8 @@ from .views import (
     DownloadApprovalPDF,
     TicketViewSet,
     RefundRecordViewSet,
-    cancel_order_to_refund
+    cancel_order_to_refund,
+    DashboardStatsView
 )
 
 # Naye master routes ke liye router
@@ -72,6 +73,7 @@ urlpatterns = [
     path('approvals/<int:pk>/pdf/', DownloadApprovalPDF.as_view(), name='download-approval-pdf'),
 
     path('orders/<int:pk>/cancel/', cancel_order_to_refund, name='cancel-order'),
+    path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
 
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
