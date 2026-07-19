@@ -400,54 +400,104 @@ class ColumnVisibilityView(APIView):
 #             writer.writerow([obj.asin_fsn, obj.model_name, obj.model, obj.sap_polyshri, obj.sap_rio, obj.sap_ne, obj.sap_sms, obj.sap_smmpl])
 #         return response
 
+# 🔥 SMART CRASH-PROOF MIXIN 🔥
 class MasterBulkOperationsMixin:
+    
+    # Ye naya function Model dhoondhne me kabhi crash nahi hone dega
+    def get_model_class(self):
+        if hasattr(self, 'queryset') and self.queryset is not None:
+            return self.queryset.model
+        return self.get_queryset().model
+
     @action(detail=False, methods=['post'])
     def upload(self, request):
+        model_class = self.get_model_class() # Safe Call
         file = request.FILES.get('file')
         if not file:
             return Response({"error": "Please upload a valid Excel or CSV file."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
-            df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
+            if file.name.endswith('.csv'):
+                try:
+                    df = pd.read_csv(file)
+                except UnicodeDecodeError:
+                    file.seek(0)
+                    df = pd.read_csv(file, encoding='cp1252')
+            else:
+                df = pd.read_excel(file)
+            
+            df.columns = [str(col).strip().lower().replace('\ufeff', '').replace('ï»¿', '') for col in df.columns]
             df = df.where(pd.notnull(df), None)
             
+            col_map = {
+                'name': ['name', 'firm name', 'location name', 'merchant name', 'seller name', 'firm', 'location', 'merchant', 'vendor'],
+                'gstn_no': ['gstn number', 'gstn_no', 'gstn', 'gstin'],
+                'asin_fsn': ['asin/fsn', 'asin_fsn', 'asin', 'fsn', 'asn_fsn'],
+                'model_name': ['model name', 'model_name'],
+                'model': ['model code', 'model', 'model no'],
+                'sap_polyshri': ['sap polyshri', 'sap_polyshri'],
+                'sap_rio': ['sap rio', 'sap_rio'],
+                'sap_ne': ['sap ne', 'sap_ne'],
+                'sap_sms': ['sap sms', 'sap_sms'],
+                'sap_smmpl': ['sap smmpl', 'sap_smmpl']
+            }
+
+            actual_cols = {}
+            for db_field, aliases in col_map.items():
+                for alias in aliases:
+                    if alias in df.columns:
+                        actual_cols[db_field] = alias
+                        break
+
             created_count, updated_count = 0, 0
             for _, row in df.iterrows():
-                unique_val = str(row.get(self.unique_field, '')).strip()
-                if not unique_val or unique_val == 'None' or unique_val == 'nan': continue  
+                unique_col_name = actual_cols.get(self.unique_field)
+                if not unique_col_name:
+                    return Response({"error": f"Upload failed! Could not find valid column for '{self.unique_field}'."}, status=status.HTTP_400_BAD_REQUEST)
                 
-                defaults = {field: row.get(field) for field in self.update_fields if row.get(field) is not None}
+                unique_val = str(row.get(unique_col_name, '')).strip()
+                if not unique_val or unique_val == 'None' or unique_val == 'nan': 
+                    continue  
                 
-                obj, created = self.queryset.model.objects.update_or_create(
+                defaults = {}
+                for field in self.update_fields:
+                    col_name = actual_cols.get(field)
+                    if col_name and row.get(col_name) is not None:
+                        defaults[field] = str(row.get(col_name)).strip()
+                
+                obj, created = model_class.objects.update_or_create(
                     **{self.unique_field: unique_val}, defaults=defaults
                 )
                 if created: created_count += 1
                 else: updated_count += 1
                 
-            return Response({"message": f"Success! Added {created_count} new, Updated {updated_count} existing."}, status=status.HTTP_200_OK)
+            return Response({"message": f"Success! Added {created_count} new, Updated {updated_count} existing records."}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error processing file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get'])
     def export_data(self, request):
+        model_class = self.get_model_class() # Safe Call
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="All_{self.queryset.model.__name__}s_List.csv"'
+        response['Content-Disposition'] = f'attachment; filename="All_{model_class.__name__}s_List.csv"'
         writer = csv.writer(response)
         
         headers = [self.unique_field] + self.update_fields
         writer.writerow([h.replace('_', ' ').title() for h in headers])
         
-        for obj in self.queryset.model.objects.all().order_by('-id'):
-            writer.writerow([getattr(obj, field, '-') for field in headers])
+        for obj in model_class.objects.all().order_by('-id'):
+            # Handling None values safely during export
+            row_data = [str(getattr(obj, field)) if getattr(obj, field) is not None else '-' for field in headers]
+            writer.writerow(row_data)
         return response
 
     @action(detail=False, methods=['post'])
     def bulk_delete(self, request):
+        model_class = self.get_model_class() # Safe Call
         ids = request.data.get('ids', [])
         if not ids:
             return Response({"error": "No records selected!"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            deleted_count, _ = self.queryset.model.objects.filter(id__in=ids).delete()
+            deleted_count, _ = model_class.objects.filter(id__in=ids).delete()
             return Response({"message": f"Successfully deleted {deleted_count} record(s)."}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
