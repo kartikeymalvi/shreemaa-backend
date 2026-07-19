@@ -1134,39 +1134,41 @@ def upload_models_excel(request):
         return Response({"error": "Failed to read the Excel file. Make sure format is correct."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
       
 class ApprovalViewSet(viewsets.ModelViewSet):
-    serializer_class = ApprovalRequestSerializer # Ensure you import this
+    serializer_class = ApprovalRequestSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Admin, superuser, ya staff ko saara data dikhega auditing ke liye
         user_role = getattr(self.request.user, 'role', None)
         username = getattr(self.request.user, 'username', str(self.request.user))
         
         if user_role == 'ADMIN' or self.request.user.is_superuser or self.request.user.is_staff:
             return ApprovalRequest.objects.all().order_by('-id')
             
-        # 🔥 FIX: Normal user ko wo records dikhenge jahan wo 'Requested By' YA 'Placed By' hai (Case-insensitive match)
         return ApprovalRequest.objects.filter(
             Q(requested_by__iexact=username) | Q(placed_by__iexact=username)
         ).order_by('-id')
 
     @action(detail=False, methods=['get'])
     def dropdown_data(self, request):
-        firms = Firm.objects.all()
-        locations = Location.objects.all()
-        merchants = Merchant.objects.all()
-        models = ProductModel.objects.all()
-        
         return Response({
-            'firms': FirmDropdownSerializer(firms, many=True).data,
-            'locations': LocationDropdownSerializer(locations, many=True).data,
-            'merchants': MerchantDropdownSerializer(merchants, many=True).data,
-            'models': ModelDropdownSerializer(models, many=True).data,
+            'firms': FirmDropdownSerializer(Firm.objects.all(), many=True).data,
+            'locations': LocationDropdownSerializer(Location.objects.all(), many=True).data,
+            'merchants': MerchantDropdownSerializer(Merchant.objects.all(), many=True).data,
+            'models': ModelDropdownSerializer(ProductModel.objects.all(), many=True).data,
         })
 
-    # 🚀 STRICTOR USER CHECKING ON CREATION
+    # 🔥 1. PRD AUTO-ID GENERATOR (AMZ, FK, RL) 🔥
     def perform_create(self, serializer):
-        prefix = "ORD/SMG/"
+        merchant = serializer.validated_data.get('merchant')
+        merchant_name = merchant.name.upper() if merchant else ""
+        
+        if 'AMAZON' in merchant_name:
+            prefix = "AMZ"
+        elif 'FLIPKART' in merchant_name:
+            prefix = "FK"
+        else:
+            prefix = "RL"
+            
         last_approval = ApprovalRequest.objects.filter(approval_no__startswith=prefix).order_by('-id').first()
         
         if last_approval and last_approval.approval_no:
@@ -1179,41 +1181,33 @@ class ApprovalViewSet(viewsets.ModelViewSet):
             new_no = 1
             
         new_approval_no = f"{prefix}{str(new_no).zfill(5)}"
-        
-        # 🔥 FIX: Ab hum 'requested_by' force nahi kar rahe hain. 
-        # Jo Frontend form me manually bhara jayega, wahi save hoga!
-        serializer.save(
-            approval_no=new_approval_no 
-        )
+        serializer.save(approval_no=new_approval_no)
 
-    # 🚀 STRICTOR ADMIN CHECKING ON APPROVAL
+    # 🔥 2. EXACT TIMESTAMP ON APPROVAL 🔥
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         user_role = getattr(request.user, 'role', None)
-        # Checking if the user is genuinely an admin/staff in DB
         if not (user_role == 'ADMIN' or request.user.is_superuser or request.user.is_staff):
-            return Response({"error": "Security Alert: Only authorized Admins can approve requests."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "Security Alert: Only authorized Admins can approve."}, status=status.HTTP_403_FORBIDDEN)
             
         approval = self.get_object()
         approval.status = 'Approved'
-        
-        # 🔥 Security Lock: Logged in Admin's username is strictly stamped
-        approval.authorized_by = getattr(request.user, 'username', str(request.user))
+        # PDF ke liye naam aur exact time dono save kar rahe hain
+        current_time = datetime.now().strftime('%d/%m/%Y %I:%M %p')
+        approval.authorized_by = f"{request.user.username} ({current_time})"
         approval.save()
         return Response({"message": "Approval Request Approved Successfully!"}, status=status.HTTP_200_OK)
 
-    # 🚀 STRICTOR ADMIN CHECKING ON REJECTION
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
         user_role = getattr(request.user, 'role', None)
         if not (user_role == 'ADMIN' or request.user.is_superuser or request.user.is_staff):
-            return Response({"error": "Security Alert: Only authorized Admins can reject requests."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "Security Alert: Only authorized Admins can reject."}, status=status.HTTP_403_FORBIDDEN)
             
         approval = self.get_object()
         approval.status = 'Rejected'
-        
-        # 🔥 Security Lock: Logged in Admin's username is strictly stamped
-        approval.authorized_by = getattr(request.user, 'username', str(request.user))
+        current_time = datetime.now().strftime('%d/%m/%Y %I:%M %p')
+        approval.authorized_by = f"{request.user.username} ({current_time})"
         approval.save()
         return Response({"message": "Approval Request Rejected Successfully!"}, status=status.HTTP_200_OK)
 
