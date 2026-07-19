@@ -1192,12 +1192,14 @@ class ApprovalViewSet(viewsets.ModelViewSet):
             
         approval = self.get_object()
         approval.status = 'Approved'
-        # PDF ke liye naam aur exact time dono save kar rahe hain
-        current_time = datetime.now().strftime('%d/%m/%Y %I:%M %p')
+        
+        # 🔥 FIX: Ab ye Local Indian Time uthayega 🔥
+        current_time = timezone.localtime(timezone.now()).strftime('%d/%m/%Y %I:%M %p')
         approval.authorized_by = f"{request.user.username} ({current_time})"
         approval.save()
         return Response({"message": "Approval Request Approved Successfully!"}, status=status.HTTP_200_OK)
 
+    # 🔥 EXACT IST TIMESTAMP ON REJECT 🔥
     @action(detail=True, methods=['post'])
     def reject(self, request, pk=None):
         user_role = getattr(request.user, 'role', None)
@@ -1206,7 +1208,9 @@ class ApprovalViewSet(viewsets.ModelViewSet):
             
         approval = self.get_object()
         approval.status = 'Rejected'
-        current_time = datetime.now().strftime('%d/%m/%Y %I:%M %p')
+        
+        # 🔥 FIX: Ab ye Local Indian Time uthayega 🔥
+        current_time = timezone.localtime(timezone.now()).strftime('%d/%m/%Y %I:%M %p')
         approval.authorized_by = f"{request.user.username} ({current_time})"
         approval.save()
         return Response({"message": "Approval Request Rejected Successfully!"}, status=status.HTTP_200_OK)
