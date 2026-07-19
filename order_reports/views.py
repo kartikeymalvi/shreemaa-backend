@@ -428,9 +428,13 @@ class MasterBulkOperationsMixin:
             df.columns = [str(col).strip().lower().replace('\ufeff', '').replace('ï»¿', '') for col in df.columns]
             df = df.where(pd.notnull(df), None)
             
+            # 3. Smart Header Mapping (Aap Excel me koi bhi header rakho, ye khud match karega)
             col_map = {
                 'name': ['name', 'firm name', 'location name', 'merchant name', 'seller name', 'firm', 'location', 'merchant', 'vendor'],
-                'gstn_no': ['gstn number', 'gstn_no', 'gstn', 'gstin'],
+                
+                # 🔥 FIX: 'gstn no' yahan add kar diya gaya hai 🔥
+                'gstn_no': ['gstn number', 'gstn_no', 'gstn', 'gstin', 'gstn no'], 
+                
                 'asin_fsn': ['asin/fsn', 'asin_fsn', 'asin', 'fsn', 'asn_fsn'],
                 'model_name': ['model name', 'model_name'],
                 'model': ['model code', 'model', 'model no'],
