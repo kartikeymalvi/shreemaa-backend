@@ -254,151 +254,247 @@ class ColumnVisibilityView(APIView):
             return Response(serializer.data)
         return Response(serializer.errors, status=400)   
 
-class FirmViewSet(viewsets.ModelViewSet):
-    queryset = Firm.objects.all().order_by('-id')
-    serializer_class = FirmSerializer
-    permission_classes = [IsAuthenticated]
+# class FirmViewSet(viewsets.ModelViewSet):
+#     queryset = Firm.objects.all().order_by('-id')
+#     serializer_class = FirmSerializer
+#     permission_classes = [IsAuthenticated]
 
-class LocationViewSet(viewsets.ModelViewSet):
-    queryset = Location.objects.all().order_by('-id')
-    serializer_class = LocationSerializer
-    permission_classes = [IsAuthenticated]
+# class LocationViewSet(viewsets.ModelViewSet):
+#     queryset = Location.objects.all().order_by('-id')
+#     serializer_class = LocationSerializer
+#     permission_classes = [IsAuthenticated]
 
-class MerchantViewSet(viewsets.ModelViewSet):
-    queryset = Merchant.objects.all().order_by('-id')
-    serializer_class = MerchantSerializer
-    permission_classes = [IsAuthenticated]    
+# class MerchantViewSet(viewsets.ModelViewSet):
+#     queryset = Merchant.objects.all().order_by('-id')
+#     serializer_class = MerchantSerializer
+#     permission_classes = [IsAuthenticated]    
 
-class SellerViewSet(viewsets.ModelViewSet):
-    serializer_class = SellerSerializer  # Dhyan rahe aapka serializer imported ho
-    permission_classes = [IsAuthenticated]
+# class SellerViewSet(viewsets.ModelViewSet):
+#     serializer_class = SellerSerializer  # Dhyan rahe aapka serializer imported ho
+#     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        queryset = Seller.objects.all().order_by('-id')
-        search_query = self.request.query_params.get('search')
-        if search_query:
-            queryset = queryset.filter(
-                Q(name__icontains=search_query) |
-                Q(gstn_no__icontains=search_query) |
-                Q(sap_polyshri__icontains=search_query) |
-                Q(sap_rio__icontains=search_query) |
-                Q(sap_ne__icontains=search_query) |
-                Q(sap_sms__icontains=search_query) |
-                Q(sap_smmpl__icontains=search_query)
-            )
-        return queryset
+#     def get_queryset(self):
+#         queryset = Seller.objects.all().order_by('-id')
+#         search_query = self.request.query_params.get('search')
+#         if search_query:
+#             queryset = queryset.filter(
+#                 Q(name__icontains=search_query) |
+#                 Q(gstn_no__icontains=search_query) |
+#                 Q(sap_polyshri__icontains=search_query) |
+#                 Q(sap_rio__icontains=search_query) |
+#                 Q(sap_ne__icontains=search_query) |
+#                 Q(sap_sms__icontains=search_query) |
+#                 Q(sap_smmpl__icontains=search_query)
+#             )
+#         return queryset
 
-    # 🔥 UPLOAD ACTION
+#     # 🔥 UPLOAD ACTION
+#     @action(detail=False, methods=['post'])
+#     def upload(self, request):
+#         file = request.FILES.get('file')
+#         if not file:
+#             return Response({"error": "Please upload a valid Excel or CSV file."}, status=status.HTTP_400_BAD_REQUEST)
+#         try:
+#             if file.name.endswith('.csv'): df = pd.read_csv(file)
+#             else: df = pd.read_excel(file)
+            
+#             df = df.where(pd.notnull(df), None)
+#             created_count, updated_count = 0, 0
+#             for _, row in df.iterrows():
+#                 gstn = str(row.get('gstn_no', '')).strip()
+#                 if not gstn or gstn == 'None' or gstn == 'nan': continue  
+                
+#                 name = str(row.get('name', '')).strip()
+#                 obj, created = Seller.objects.update_or_create(
+#                     gstn_no=gstn,
+#                     defaults={
+#                         'name': name,
+#                         'sap_polyshri': row.get('sap_polyshri'),
+#                         'sap_rio': row.get('sap_rio'),
+#                         'sap_ne': row.get('sap_ne'),
+#                         'sap_sms': row.get('sap_sms'),
+#                         'sap_smmpl': row.get('sap_smmpl'),
+#                     }
+#                 )
+#                 if created: created_count += 1
+#                 else: updated_count += 1
+#             return Response({"message": f"Success! Added {created_count} new, Updated {updated_count} existing."}, status=status.HTTP_200_OK)
+#         except Exception as e:
+#             return Response({"error": f"Error processing file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+#     # 🔥 EXPORT ALL ACTION
+#     @action(detail=False, methods=['get'])
+#     def export_data(self, request):
+#         response = HttpResponse(content_type='text/csv')
+#         response['Content-Disposition'] = 'attachment; filename="All_Vendors_List.csv"'
+#         writer = csv.writer(response)
+#         writer.writerow(['GSTN Number', 'Seller Name', 'SAP Polyshri', 'SAP Rio', 'SAP NE', 'SAP SMS', 'SAP SMMPL'])
+#         for obj in Seller.objects.all().order_by('-id'):
+#             writer.writerow([obj.gstn_no, obj.name, obj.sap_polyshri, obj.sap_rio, obj.sap_ne, obj.sap_sms, obj.sap_smmpl])
+#         return response
+
+
+# # --- 🚀 2. PRODUCT MODEL VIEWSET ---
+# class ProductModelViewSet(viewsets.ModelViewSet):
+#     serializer_class = ProductModelSerializer # Dhyan rahe aapka serializer imported ho
+#     permission_classes = [IsAuthenticated]
+
+#     def get_queryset(self):
+#         queryset = ProductModel.objects.all().order_by('-id')
+#         search_query = self.request.query_params.get('search')
+#         if search_query:
+#             queryset = queryset.filter(
+#                 Q(asin_fsn__icontains=search_query) |
+#                 Q(model_name__icontains=search_query) |
+#                 Q(model__icontains=search_query) |
+#                 Q(sap_polyshri__icontains=search_query) |
+#                 Q(sap_rio__icontains=search_query) |
+#                 Q(sap_ne__icontains=search_query) |
+#                 Q(sap_sms__icontains=search_query) |
+#                 Q(sap_smmpl__icontains=search_query)
+#             )
+#         return queryset
+
+#     # 🔥 UPLOAD ACTION
+#     @action(detail=False, methods=['post'])
+#     def upload(self, request):
+#         file = request.FILES.get('file')
+#         if not file:
+#             return Response({"error": "Upload valid file."}, status=status.HTTP_400_BAD_REQUEST)
+#         try:
+#             if file.name.endswith('.csv'): df = pd.read_csv(file)
+#             else: df = pd.read_excel(file)
+            
+#             df = df.where(pd.notnull(df), None)
+#             created_count, updated_count = 0, 0
+#             for _, row in df.iterrows():
+#                 asin = str(row.get('asin_fsn', '')).strip()
+#                 if not asin or asin == 'None' or asin == 'nan': continue
+
+#                 obj, created = ProductModel.objects.update_or_create(
+#                     asin_fsn=asin,
+#                     defaults={
+#                         'model_name': row.get('model_name'),
+#                         'model': row.get('model'),
+#                         'sap_polyshri': row.get('sap_polyshri'),
+#                         'sap_rio': row.get('sap_rio'),
+#                         'sap_ne': row.get('sap_ne'),
+#                         'sap_sms': row.get('sap_sms'),
+#                         'sap_smmpl': row.get('sap_smmpl'),
+#                     }
+#                 )
+#                 if created: created_count += 1
+#                 else: updated_count += 1
+#             return Response({"message": f"Added {created_count}, Updated {updated_count} models."}, status=status.HTTP_200_OK)
+#         except Exception as e:
+#             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+#     # 🔥 EXPORT ALL ACTION
+#     @action(detail=False, methods=['get'])
+#     def export_data(self, request):
+#         response = HttpResponse(content_type='text/csv')
+#         response['Content-Disposition'] = 'attachment; filename="All_Models_List.csv"'
+#         writer = csv.writer(response)
+#         writer.writerow(['ASN/FSN', 'Model Name', 'Model', 'SAP Polyshri', 'SAP Rio', 'SAP NE', 'SAP SMS', 'SAP SMMPL'])
+#         for obj in ProductModel.objects.all().order_by('-id'):
+#             writer.writerow([obj.asin_fsn, obj.model_name, obj.model, obj.sap_polyshri, obj.sap_rio, obj.sap_ne, obj.sap_sms, obj.sap_smmpl])
+#         return response
+
+class MasterBulkOperationsMixin:
     @action(detail=False, methods=['post'])
     def upload(self, request):
         file = request.FILES.get('file')
         if not file:
             return Response({"error": "Please upload a valid Excel or CSV file."}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            if file.name.endswith('.csv'): df = pd.read_csv(file)
-            else: df = pd.read_excel(file)
-            
+            df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
+            df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
             df = df.where(pd.notnull(df), None)
+            
             created_count, updated_count = 0, 0
             for _, row in df.iterrows():
-                gstn = str(row.get('gstn_no', '')).strip()
-                if not gstn or gstn == 'None' or gstn == 'nan': continue  
+                unique_val = str(row.get(self.unique_field, '')).strip()
+                if not unique_val or unique_val == 'None' or unique_val == 'nan': continue  
                 
-                name = str(row.get('name', '')).strip()
-                obj, created = Seller.objects.update_or_create(
-                    gstn_no=gstn,
-                    defaults={
-                        'name': name,
-                        'sap_polyshri': row.get('sap_polyshri'),
-                        'sap_rio': row.get('sap_rio'),
-                        'sap_ne': row.get('sap_ne'),
-                        'sap_sms': row.get('sap_sms'),
-                        'sap_smmpl': row.get('sap_smmpl'),
-                    }
+                defaults = {field: row.get(field) for field in self.update_fields if row.get(field) is not None}
+                
+                obj, created = self.queryset.model.objects.update_or_create(
+                    **{self.unique_field: unique_val}, defaults=defaults
                 )
                 if created: created_count += 1
                 else: updated_count += 1
+                
             return Response({"message": f"Success! Added {created_count} new, Updated {updated_count} existing."}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": f"Error processing file: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # 🔥 EXPORT ALL ACTION
     @action(detail=False, methods=['get'])
     def export_data(self, request):
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="All_Vendors_List.csv"'
+        response['Content-Disposition'] = f'attachment; filename="All_{self.queryset.model.__name__}s_List.csv"'
         writer = csv.writer(response)
-        writer.writerow(['GSTN Number', 'Seller Name', 'SAP Polyshri', 'SAP Rio', 'SAP NE', 'SAP SMS', 'SAP SMMPL'])
-        for obj in Seller.objects.all().order_by('-id'):
-            writer.writerow([obj.gstn_no, obj.name, obj.sap_polyshri, obj.sap_rio, obj.sap_ne, obj.sap_sms, obj.sap_smmpl])
+        
+        headers = [self.unique_field] + self.update_fields
+        writer.writerow([h.replace('_', ' ').title() for h in headers])
+        
+        for obj in self.queryset.model.objects.all().order_by('-id'):
+            writer.writerow([getattr(obj, field, '-') for field in headers])
         return response
 
+    @action(detail=False, methods=['post'])
+    def bulk_delete(self, request):
+        ids = request.data.get('ids', [])
+        if not ids:
+            return Response({"error": "No records selected!"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            deleted_count, _ = self.queryset.model.objects.filter(id__in=ids).delete()
+            return Response({"message": f"Successfully deleted {deleted_count} record(s)."}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-# --- 🚀 2. PRODUCT MODEL VIEWSET ---
-class ProductModelViewSet(viewsets.ModelViewSet):
-    serializer_class = ProductModelSerializer # Dhyan rahe aapka serializer imported ho
-    permission_classes = [IsAuthenticated]
+# --- 🚀 5 MASTER VIEWSETS USING THE MIXIN ---
+
+class FirmViewSet(MasterBulkOperationsMixin, viewsets.ModelViewSet):
+    queryset = Firm.objects.all().order_by('-id')
+    serializer_class = FirmSerializer
+    unique_field = 'name'
+    update_fields = [] # Sirf name hai
+
+class LocationViewSet(MasterBulkOperationsMixin, viewsets.ModelViewSet):
+    queryset = Location.objects.all().order_by('-id')
+    serializer_class = LocationSerializer
+    unique_field = 'name'
+    update_fields = []
+
+class MerchantViewSet(MasterBulkOperationsMixin, viewsets.ModelViewSet):
+    queryset = Merchant.objects.all().order_by('-id')
+    serializer_class = MerchantSerializer
+    unique_field = 'name'
+    update_fields = []
+
+class SellerViewSet(MasterBulkOperationsMixin, viewsets.ModelViewSet):
+    serializer_class = SellerSerializer  
+    unique_field = 'gstn_no'
+    update_fields = ['name', 'sap_polyshri', 'sap_rio', 'sap_ne', 'sap_sms', 'sap_smmpl']
+
+    def get_queryset(self):
+        queryset = Seller.objects.all().order_by('-id')
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(Q(name__icontains=search) | Q(gstn_no__icontains=search))
+        return queryset
+
+class ProductModelViewSet(MasterBulkOperationsMixin, viewsets.ModelViewSet):
+    serializer_class = ProductModelSerializer 
+    unique_field = 'asin_fsn'
+    update_fields = ['model_name', 'model', 'sap_polyshri', 'sap_rio', 'sap_ne', 'sap_sms', 'sap_smmpl']
 
     def get_queryset(self):
         queryset = ProductModel.objects.all().order_by('-id')
-        search_query = self.request.query_params.get('search')
-        if search_query:
-            queryset = queryset.filter(
-                Q(asin_fsn__icontains=search_query) |
-                Q(model_name__icontains=search_query) |
-                Q(model__icontains=search_query) |
-                Q(sap_polyshri__icontains=search_query) |
-                Q(sap_rio__icontains=search_query) |
-                Q(sap_ne__icontains=search_query) |
-                Q(sap_sms__icontains=search_query) |
-                Q(sap_smmpl__icontains=search_query)
-            )
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(Q(asin_fsn__icontains=search) | Q(model_name__icontains=search) | Q(model__icontains=search))
         return queryset
-
-    # 🔥 UPLOAD ACTION
-    @action(detail=False, methods=['post'])
-    def upload(self, request):
-        file = request.FILES.get('file')
-        if not file:
-            return Response({"error": "Upload valid file."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            if file.name.endswith('.csv'): df = pd.read_csv(file)
-            else: df = pd.read_excel(file)
-            
-            df = df.where(pd.notnull(df), None)
-            created_count, updated_count = 0, 0
-            for _, row in df.iterrows():
-                asin = str(row.get('asin_fsn', '')).strip()
-                if not asin or asin == 'None' or asin == 'nan': continue
-
-                obj, created = ProductModel.objects.update_or_create(
-                    asin_fsn=asin,
-                    defaults={
-                        'model_name': row.get('model_name'),
-                        'model': row.get('model'),
-                        'sap_polyshri': row.get('sap_polyshri'),
-                        'sap_rio': row.get('sap_rio'),
-                        'sap_ne': row.get('sap_ne'),
-                        'sap_sms': row.get('sap_sms'),
-                        'sap_smmpl': row.get('sap_smmpl'),
-                    }
-                )
-                if created: created_count += 1
-                else: updated_count += 1
-            return Response({"message": f"Added {created_count}, Updated {updated_count} models."}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    # 🔥 EXPORT ALL ACTION
-    @action(detail=False, methods=['get'])
-    def export_data(self, request):
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="All_Models_List.csv"'
-        writer = csv.writer(response)
-        writer.writerow(['ASN/FSN', 'Model Name', 'Model', 'SAP Polyshri', 'SAP Rio', 'SAP NE', 'SAP SMS', 'SAP SMMPL'])
-        for obj in ProductModel.objects.all().order_by('-id'):
-            writer.writerow([obj.asin_fsn, obj.model_name, obj.model, obj.sap_polyshri, obj.sap_rio, obj.sap_ne, obj.sap_sms, obj.sap_smmpl])
-        return response
 #-------------------------INVOICE SHIPMENT---------------
 class InvoiceShipmentViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceShipmentSerializer
