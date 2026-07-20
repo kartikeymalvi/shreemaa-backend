@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+import views
 from .views import (
     OrderReportListCreateView, 
     BulkUploadExcelView, 
@@ -75,7 +76,7 @@ urlpatterns = [
 
     path('orders/<int:pk>/cancel/', cancel_order_to_refund, name='cancel-order'),
     path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
-    path('fetch-invoice-grpo/<str:invoice_no>/', fetch_invoice_for_grpo.as_view(), name='fetch-invoice-grpo'),
+    path('fetch-invoice-grpo/<str:invoice_no>/', views.fetch_invoice_for_grpo, name='fetch-invoice-grpo'),
 
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
