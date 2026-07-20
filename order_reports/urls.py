@@ -30,7 +30,6 @@ from .views import (
     fetch_invoice_for_grpo,
     PurchaseInwardViewSet, fetch_grpo_for_inward
 )
-
 # Naye master routes ke liye router
 router = DefaultRouter()
 router.register(r'firms', FirmViewSet)
@@ -49,19 +48,21 @@ router.register(r'approvals', ApprovalViewSet, basename='approval')
 router.register(r'shipments', InvoiceShipmentViewSet, basename='shipments')
 router.register(r'refunds', RefundRecordViewSet, basename='refund')
 
+# 🔥 FIX: purchase-inward ko urlpatterns se bahar nikal kar yahan add kar diya gaya hai 🔥
+router.register(r'purchase-inward', PurchaseInwardViewSet, basename='purchase-inward')
+
 urlpatterns = [
     # bulk -delete path ---
     path('orders/bulk-delete/', bulk_delete_orders, name='bulk-delete-orders'),
     path('invoices/bulk-delete/', bulk_delete_invoices, name='bulk-delete-invoices'),
     path('models/upload/', upload_models_excel, name='upload_models_excel'),
+    
     #  UPLOAD WALE PATHS HAMESHA UPAR RAKHNE CHAHIYE 
     path('orders/upload/', BulkUploadExcelView.as_view(), name='orders-upload'),
     
     path('orders/', OrderReportListCreateView.as_view(), name='orders-list-create'),
     path('orders/<int:pk>/', OrderReportDetailView.as_view(), name='orders-detail'),
     path('column-policy/', ColumnVisibilityView.as_view(), name='column-policy'),
-
-    
     
     #--------------INVOICE-SHIPMENT ROUTE --------------------
     path('fetch-order/<str:order_id>/', fetch_order_for_shipment, name='fetch-order'),
@@ -78,9 +79,8 @@ urlpatterns = [
     path('orders/<int:pk>/cancel/', cancel_order_to_refund, name='cancel-order'),
     path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('fetch-invoice-grpo/<str:invoice_no>/', fetch_invoice_for_grpo, name='fetch-invoice-grpo'),
-    router.register(r'purchase-inward', PurchaseInwardViewSet, basename='purchase-inward'),
+    
     path('fetch-grpo-inward/<str:grpo_no>/', fetch_grpo_for_inward, name='fetch-grpo-inward'),
-
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
     path('', include(router.urls)),
