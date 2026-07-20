@@ -488,3 +488,52 @@ class RefundRecord(models.Model):
                     'received_comment': 'Auto-generated from Closed Ticket'
                 }
             )
+
+
+# --- PURCHASE INWARD MODEL ---
+class PurchaseInward(models.Model):
+    inward_no = models.CharField(max_length=50, unique=True, blank=True)
+    grpo_no = models.CharField(max_length=100) # Linking to GRPO
+    inward_date = models.DateField(auto_now_add=True)
+    
+    # Auto-fetched from GRPO
+    firm_name = models.CharField(max_length=255, blank=True, null=True)
+    vendor_name = models.CharField(max_length=255, blank=True, null=True)
+    item_code = models.CharField(max_length=100, blank=True, null=True)
+    expected_qty = models.FloatField(default=0.0)
+    
+    # Physical Verification Data
+    received_qty = models.FloatField(default=0.0)
+    shortage_qty = models.FloatField(default=0.0) # Auto Calculate
+    
+    received_by = models.CharField(max_length=100, blank=True, null=True)
+    warehouse_location = models.CharField(max_length=255, blank=True, null=True)
+    status = models.CharField(max_length=50, default='Completed') # Partial / Completed
+    remarks = models.TextField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        # 1. Auto-generate Inward Number (e.g., INW-0001)
+        if not self.inward_no:
+            last_inward = PurchaseInward.objects.order_by('id').last()
+            if last_inward and last_inward.inward_no.startswith('INW-'):
+                try:
+                    last_id = int(last_inward.inward_no.split('-')[1])
+                    self.inward_no = f"INW-{last_id + 1:04d}"
+                except:
+                    self.inward_no = "INW-0001"
+            else:
+                self.inward_no = "INW-0001"
+        
+        # 2. Auto-calculate Shortage Quantity
+        self.shortage_qty = float(self.expected_qty) - float(self.received_qty)
+        
+        # 3. Smart Status Update
+        if self.received_qty < self.expected_qty:
+            self.status = 'Partial'
+        else:
+            self.status = 'Completed'
+            
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.inward_no} - {self.grpo_no}"

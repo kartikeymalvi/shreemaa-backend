@@ -1532,8 +1532,12 @@ from rest_framework.decorators import api_view,permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel,PurchaseInward, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer,PurchaseInwardSerializer
 import pandas as pd
 from django.utils import timezone
 from django.db.models import Sum, Count
@@ -2859,6 +2863,7 @@ class DownloadApprovalPDF(APIView):
             
         except Exception as e:
             return HttpResponse(f"Error generating PDF: {str(e)}", status=400)    
+        
 
 
 class TicketViewSet(viewsets.ModelViewSet):
@@ -2968,4 +2973,34 @@ def fetch_invoice_for_grpo(request, invoice_no):
             "grpo_amt": ship.invoice_amount,
         })
         
-    return Response(data, status=status.HTTP_200_OK)        
+    return Response(data, status=status.HTTP_200_OK)    
+# --- PURCHASE INWARD VIEWSET ---
+class PurchaseInwardViewSet(viewsets.ModelViewSet):
+    queryset = PurchaseInward.objects.all().order_by('-id')
+    serializer_class = PurchaseInwardSerializer
+    permission_classes = [IsAuthenticated]
+
+# --- SMART AUTO-FETCH GRPO DETAILS ---
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fetch_grpo_for_inward(request, grpo_no):
+    try:
+        # DB se GRPO details nikalna
+        grpo_record = GRPORecord.objects.filter(grpo_no=grpo_no).first()
+        
+        if not grpo_record:
+            return Response({"error": "Bhai, ye GRPO Number database me nahi mila!"}, status=status.HTTP_404_NOT_FOUND)
+            
+        data = {
+            "grpo_no": grpo_record.grpo_no,
+            "firm_name": grpo_record.firm_name,
+            "vendor_name": grpo_record.purchase_vendor_name,
+            "item_code": grpo_record.item_code,
+            "expected_qty": grpo_record.grpo_quantity, # GRPO ki qty humari expected qty hai
+            "warehouse_location": grpo_record.inward_whs_code,
+        }
+        
+        return Response(data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)    

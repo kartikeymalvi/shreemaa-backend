@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment, Seller, ApprovalRequest, ApprovalItem, GRPORecord, Ticket, RefundRecord
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment, Seller, ApprovalRequest, ApprovalItem, GRPORecord, Ticket, RefundRecord,PurchaseInward
 
 class OrderReportSerializer(serializers.ModelSerializer):
     # Virtual fields takaki agar DB mein column blank ho toh crash na ho
@@ -418,3 +418,8 @@ class RefundRecordSerializer(serializers.ModelSerializer):
                 data['invoice_no'] = '-'
                 
         return data
+
+class PurchaseInwardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PurchaseInward
+        fields = '__all__'    
