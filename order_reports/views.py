@@ -1544,6 +1544,8 @@ from django.db.models import Sum, Count
 from rest_framework.decorators import action
 from django.db.models import Q
 from django.http import HttpResponse
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 import csv
 import math
 import datetime
@@ -3003,4 +3005,52 @@ def fetch_grpo_for_inward(request, grpo_no):
         return Response(data, status=status.HTTP_200_OK)
         
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)    
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+
+@receiver(post_save, sender=OrderReport)
+def create_refund_on_order_cancel(sender, instance, created, **kwargs):
+    # Agar order ka status Cancelled ho jata hai
+    if instance.status == 'Cancelled' or instance.status == 'Cancel Confirmation':
+        # Check karte hain ki is order ka refund pehle se to nahi bana
+        refund_exists = RefundRecord.objects.filter(order_id=instance.order_id).exists()
+        
+        if not refund_exists:
+            RefundRecord.objects.create(
+                order_id=instance.order_id,
+                refund_amount=instance.total_amount, # Aapke model mein jo amount field ho
+                status='Pending',
+                remarks=f"Auto-generated: Order {instance.order_id} was Cancelled."
+            )
+
+# =======================================================
+# 🚀 2. AUTO-REFUND TRIGGER (Invoice Cancel Hone Par)
+# =======================================================
+@receiver(post_save, sender=InvoiceShipment)
+def create_refund_on_invoice_cancel(sender, instance, created, **kwargs):
+    # Agar Invoice ka status Cancelled ho jata hai
+    if instance.status == 'Cancelled':
+        refund_exists = RefundRecord.objects.filter(invoice_no=instance.invoice_no).exists()
+        
+        if not refund_exists:
+            RefundRecord.objects.create(
+                order_id=instance.order_id, 
+                invoice_no=instance.invoice_no,
+                refund_amount=instance.invoice_amount, # Aapke model mein jo amount field ho
+                status='Pending',
+                remarks=f"Auto-generated: Invoice {instance.invoice_no} was Cancelled."
+            )
+
+# =======================================================
+# 🚀 3. GRPO & INVOICE AUTO-MATCH TRIGGER
+# =======================================================
+@receiver(post_save, sender=GRPORecord)
+def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
+    # Ye sirf tab chalega jab naya GRPO upload hoga (Bulk upload se)
+    if created: 
+        # PRD ke hisaab se hum Invoice No ke basis par match kar rahe hain
+        matching_invoices = InvoiceShipment.objects.filter(invoice_no=instance.grpo_invoice_number)
+        
+        for inv in matching_invoices:
+            # Invoice ka inward status 'Done' mark kar dete hain
+            inv.inward_status = 'Done' 
+            inv.save()          
