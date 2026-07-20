@@ -27,7 +27,8 @@ from .views import (
     RefundRecordViewSet,
     cancel_order_to_refund,
     DashboardStatsView,
-    fetch_invoice_for_grpo
+    fetch_invoice_for_grpo,
+    PurchaseInwardViewSet, fetch_grpo_for_inward
 )
 
 # Naye master routes ke liye router
@@ -77,6 +78,8 @@ urlpatterns = [
     path('orders/<int:pk>/cancel/', cancel_order_to_refund, name='cancel-order'),
     path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('fetch-invoice-grpo/<str:invoice_no>/', fetch_invoice_for_grpo, name='fetch-invoice-grpo'),
+    router.register(r'purchase-inward', PurchaseInwardViewSet, basename='purchase-inward'),
+    path('fetch-grpo-inward/<str:grpo_no>/', fetch_grpo_for_inward, name='fetch-grpo-inward'),
 
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
