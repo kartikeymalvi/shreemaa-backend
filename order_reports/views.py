@@ -1525,8 +1525,6 @@
 
 #         except Exception as e:
 #             return Response({"error": str(e)}, status=500)
-
-
 from rest_framework import generics, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -1555,7 +1553,6 @@ from rest_framework.permissions import IsAuthenticated
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from .models import ApprovalRequest
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -1606,7 +1603,6 @@ class OrderReportListCreateView(generics.ListCreateAPIView):
             )
 
         return queryset
-
 
 
 class BulkUploadExcelView(APIView):
@@ -2003,14 +1999,15 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
             print(f"🔥 Error fetching InvoiceShipments: {str(e)}")
             return InvoiceShipment.objects.none()
 
+    # 🔥 FIX 1: Bulk Update Cancel Reason Fixed Here 🔥
     @action(detail=False, methods=['post'])
     def bulk_update_status(self, request):
         ids = request.data.get('ids', [])
         new_status = request.data.get('delivery_status')
         new_date = request.data.get('delivery_date')
-        new_reason = request.data.get('cancel_reason') # 🔥 NAYA REASON FETCH 🔥
+        new_reason = request.data.get('cancel_reason') # 🔥 ADDED CANCEL REASON CAPTURE 🔥
         
-        if not ids: return Response({"error": "No IDs selected!"}, status=400)
+        if not ids: return Response({"error": "No IDs selected!"}, status=status.HTTP_400_BAD_REQUEST)
         
         updated = 0
         for shipment in InvoiceShipment.objects.filter(id__in=ids):
@@ -2018,14 +2015,14 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
             if new_date: shipment.delivery_date = new_date
             
             # Agar Cancel ho raha hai, tabhi reason aur invoice_status update hoga
-            if new_status == 'Cancelled':
+            if new_status and new_status.lower() == 'cancelled':
                 shipment.invoice_status = 'Cancel'
                 if new_reason: shipment.cancel_reason = new_reason
 
             shipment.save()
             updated += 1
             
-        return Response({"message": f"Successfully updated {updated} shipments."})
+        return Response({"message": f"Successfully updated {updated} shipments."}, status=status.HTTP_200_OK)
 
 class InvoiceShipmentUploadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -2872,6 +2869,14 @@ def cancel_order_to_refund(request, pk):
         order.order_status = 'Complete' # Aapki requirement: "status completed ho jayega iska"
         order.save()
         
+        # 🔥 FIX: Us order ki saari Invoices ko bhi instantly Cancel mark karo 🔥
+        shipments = InvoiceShipment.objects.filter(order_id=order.order_id, asin_fsn=order.asin_fsn)
+        for ship in shipments:
+            ship.delivery_status = 'Cancelled'
+            ship.invoice_status = 'Cancel'
+            ship.cancel_reason = 'Auto-Cancelled from Order Dashboard'
+            ship.save()
+        
         # Add to Refund Tab
         RefundRecord.objects.create(
             source_date=order.txn_date,
@@ -2880,14 +2885,14 @@ def cancel_order_to_refund(request, pk):
             order_id=order.order_id,
             invoice_no="-", # Direct order cancel me invoice nahi hota
             model_name=order.model_name,
+            refund_qty=order.order_qty, # 🔥 FIX: Added Qty here
             invoice_amount=order.order_amount,
             received_comment="cancel confirmed"
         )
-        return Response({"message": "Order Cancelled and Moved to Refunds!"})
+        return Response({"message": "Order Cancelled, Invoices Updated and Moved to Refunds!"})
     except Exception as e:
         return Response({"error": str(e)}, status=400)
     
-
 
 # live dashboard API
 

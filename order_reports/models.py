@@ -445,6 +445,7 @@ class RefundRecord(models.Model):
     received_txn_type = models.CharField(max_length=100, null=True, blank=True)
     received_card_no = models.CharField(max_length=100, null=True, blank=True)
     received_comment = models.TextField(null=True, blank=True)
+    refund_qty = models.IntegerField(default=0, null=True, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True, null=True)
 
@@ -452,7 +453,6 @@ class RefundRecord(models.Model):
         return f"Refund for {self.order_id}"
     @receiver([post_save], sender=InvoiceShipment)
     def auto_refund_from_shipment(sender, instance, **kwargs):
-        # Rule: Agar order Complete hai aur ye shipment Cancel hui hai -> Send to Refund
         orders = OrderReport.objects.filter(order_id=instance.order_id, asin_fsn=instance.asin_fsn)
         if orders.exists() and instance.delivery_status == 'Cancelled':
             order = orders.first()
@@ -466,6 +466,7 @@ class RefundRecord(models.Model):
                         'merchant': order.merchant,
                         'model_name': instance.model_name,
                         'invoice_amount': instance.invoice_amount,
+                        'refund_qty': instance.invoice_qty, # 🔥 BAS YE LINE ADD KARNI HAI
                         'received_comment': 'Auto-generated from Cancelled Shipment'
                     }
                 )
@@ -483,6 +484,7 @@ class RefundRecord(models.Model):
                     'merchant': instance.merchant,
                     'model_name': instance.model,
                     'invoice_amount': instance.discrepancy_amount,
+                    'refund_qty': instance.discrepancy_qty,
                     'received_comment': 'Auto-generated from Closed Ticket'
                 }
             )
