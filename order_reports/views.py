@@ -2008,14 +2008,20 @@ class InvoiceShipmentViewSet(viewsets.ModelViewSet):
         ids = request.data.get('ids', [])
         new_status = request.data.get('delivery_status')
         new_date = request.data.get('delivery_date')
+        new_reason = request.data.get('cancel_reason') # 🔥 NAYA REASON FETCH 🔥
         
         if not ids: return Response({"error": "No IDs selected!"}, status=400)
         
         updated = 0
-        # Loop se save karenge taaki auto-refund wale Signals trigger ho sakein
         for shipment in InvoiceShipment.objects.filter(id__in=ids):
             if new_status: shipment.delivery_status = new_status
             if new_date: shipment.delivery_date = new_date
+            
+            # Agar Cancel ho raha hai, tabhi reason aur invoice_status update hoga
+            if new_status == 'Cancelled':
+                shipment.invoice_status = 'Cancel'
+                if new_reason: shipment.cancel_reason = new_reason
+
             shipment.save()
             updated += 1
             
