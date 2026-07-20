@@ -2624,7 +2624,7 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
     serializer_class = GRPORecordSerializer
     permission_classes = [IsAuthenticated] # Agar bina login chalana ho toh ise hata dena
 
-    # 🔥 BULK EXCEL UPLOAD LOGIC 🔥
+    # 🔥 STRICT BULK EXCEL UPLOAD LOGIC 🔥
     @action(detail=False, methods=['post'])
     def upload_excel(self, request):
         file = request.FILES.get('file')
@@ -2632,18 +2632,27 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
             return Response({"error": "Bhai, koi file upload nahi hui!"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # Excel ya CSV dono support karega
             if file.name.endswith('.csv'):
                 df = pd.read_csv(file)
             else:
                 df = pd.read_excel(file)
                 
-            # Khali cells ko khali string bana do taaki 'nan' na aaye
             df = df.fillna('')
             
+            # 🔥 STRICT VALIDATION: Pehle saare valid invoices DB se nikal lo 🔥
+            valid_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
+            
             records = []
+            skipped_count = 0
+            
             for index, row in df.iterrows():
-                # Strings safe conversion
+                inv_no = str(row.get('grpo_invoice_number', '')).strip()
+                
+                # Agar Invoice Number humare record me nahi hai, toh ye row REJECT!
+                if inv_no not in valid_invoices:
+                    skipped_count += 1
+                    continue
+                
                 grpo_qty = str(row.get('grpo_quantity', '0')).replace(',', '').strip()
                 grpo_amt = str(row.get('grpo_amt', '0')).replace(',', '').strip()
 
@@ -2653,7 +2662,7 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
                     grpo_status=str(row.get('grpo_status', 'Open')),
                     grpo_user_name=str(row.get('grpo_user_name', '')),
                     grpo_no=str(row.get('grpo_no', '')),
-                    grpo_invoice_number=str(row.get('grpo_invoice_number', '')),
+                    grpo_invoice_number=inv_no,
                     grpo_create_date=str(row.get('grpo_create_date', '')),
                     grpo_posting_date=str(row.get('grpo_posting_date', '')),
                     purchase_vendor_code=str(row.get('purchase_vendor_code', '')),
@@ -2661,15 +2670,17 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
                     inward_whs_code=str(row.get('inward_whs_code', '')),
                     item_code=str(row.get('item_code', '')),
                     description=str(row.get('description', '')),
-                    
-                    # Decimal conversion safe math
                     grpo_quantity=float(grpo_qty) if grpo_qty.replace('.','',1).isdigit() else 0.0,
                     grpo_amt=float(grpo_amt) if grpo_amt.replace('.','',1).isdigit() else 0.0,
                 ))
             
-            # Bulk create for blazing fast database insert
             GRPORecord.objects.bulk_create(records)
-            return Response({"message": f"{len(records)} GRPO records successfully imported!"}, status=status.HTTP_201_CREATED)
+            
+            msg = f"{len(records)} GRPO records successfully imported!"
+            if skipped_count > 0:
+                msg += f" (Strict Warning: {skipped_count} rows skipped due to invalid/missing Invoice Number)"
+                
+            return Response({"message": msg}, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             return Response({"error": f"File process karne me error aaya: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -2933,3 +2944,28 @@ class DashboardStatsView(APIView):
 
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+        
+
+# --- GRPO SMART AUTO-FETCH API ---
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fetch_invoice_for_grpo(request, invoice_no):
+    # Invoice module se data dhundhna
+    shipments = InvoiceShipment.objects.filter(invoice_no=invoice_no)
+    
+    if not shipments.exists():
+        return Response({"error": "Invoice Number not found in database!"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Agar ek invoice mein multiple items hain, toh hum sab bhejenge, frontend handle kar lega
+    data = []
+    for ship in shipments:
+        data.append({
+            "firm_name": ship.firm,
+            "purchase_vendor_name": ship.seller_name,
+            "item_code": ship.asin_fsn,
+            "description": ship.model_name,
+            "grpo_quantity": ship.invoice_qty,
+            "grpo_amt": ship.invoice_amount,
+        })
+        
+    return Response(data, status=status.HTTP_200_OK)        
