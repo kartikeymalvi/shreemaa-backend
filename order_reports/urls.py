@@ -28,7 +28,7 @@ from .views import (
     cancel_order_to_refund,
     DashboardStatsView,
     fetch_invoice_for_grpo,
-    PurchaseInwardViewSet, fetch_grpo_for_inward
+    PurchaseInwardViewSet, fetch_grpo_for_inward,WarehouseAuditViewSet, fetch_invoice_for_audit
 )
 # Naye master routes ke liye router
 router = DefaultRouter()
@@ -50,6 +50,8 @@ router.register(r'refunds', RefundRecordViewSet, basename='refund')
 
 # 🔥 FIX: purchase-inward ko urlpatterns se bahar nikal kar yahan add kar diya gaya hai 🔥
 router.register(r'purchase-inward', PurchaseInwardViewSet, basename='purchase-inward')
+
+router.register(r'warehouse-audit', WarehouseAuditViewSet, basename='warehouse-audit')
 
 urlpatterns = [
     # bulk -delete path ---
@@ -81,6 +83,7 @@ urlpatterns = [
     path('fetch-invoice-grpo/<str:invoice_no>/', fetch_invoice_for_grpo, name='fetch-invoice-grpo'),
     
     path('fetch-grpo-inward/<str:grpo_no>/', fetch_grpo_for_inward, name='fetch-grpo-inward'),
+    path('fetch-invoice-audit/<str:invoice_no>/', fetch_invoice_for_audit, name='fetch-invoice-audit'),
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
     path('', include(router.urls)),

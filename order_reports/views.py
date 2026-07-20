@@ -1536,8 +1536,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel,PurchaseInward, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer,PurchaseInwardSerializer
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel,PurchaseInward, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket,WarehouseAudit
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer,PurchaseInwardSerializer,WarehouseAuditSerializer
 import pandas as pd
 from django.utils import timezone
 from django.db.models import Sum, Count
@@ -3053,4 +3053,32 @@ def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
         for inv in matching_invoices:
             # Invoice ka inward status 'Done' mark kar dete hain
             inv.inward_status = 'Done' 
-            inv.save()          
+            inv.save()       
+
+
+class WarehouseAuditViewSet(viewsets.ModelViewSet):
+    queryset = WarehouseAudit.objects.all().order_by('-id')
+    serializer_class = WarehouseAuditSerializer
+    permission_classes = [IsAuthenticated]
+
+# --- SMART FETCH INVOICE FOR AUDIT ---
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fetch_invoice_for_audit(request, invoice_no):
+    try:
+        # DB se Invoice details nikalna
+        invoice = InvoiceShipment.objects.filter(invoice_no=invoice_no).first()
+        
+        if not invoice:
+            return Response({"error": "Bhai, ye Invoice Number system me nahi mila!"}, status=status.HTTP_404_NOT_FOUND)
+            
+        data = {
+            "invoice_no": invoice.invoice_no,
+            "order_id": invoice.order_id,
+            "expected_qty": invoice.invoice_qty, # Aapke model me jo invoice qty ka column ho, wo name yahan daalein
+        }
+        
+        return Response(data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

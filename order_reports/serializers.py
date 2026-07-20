@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment, Seller, ApprovalRequest, ApprovalItem, GRPORecord, Ticket, RefundRecord,PurchaseInward
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment, Seller, ApprovalRequest, ApprovalItem, GRPORecord, Ticket, RefundRecord,PurchaseInward,WarehouseAudit
 
 class OrderReportSerializer(serializers.ModelSerializer):
     # Virtual fields takaki agar DB mein column blank ho toh crash na ho
@@ -423,3 +423,8 @@ class PurchaseInwardSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseInward
         fields = '__all__'    
+
+class WarehouseAuditSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WarehouseAudit
+        fields = '__all__'

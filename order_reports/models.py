@@ -537,3 +537,44 @@ class PurchaseInward(models.Model):
 
     def __str__(self):
         return f"{self.inward_no} - {self.grpo_no}"
+
+
+# --- WAREHOUSE AUDIT MODEL ---
+class WarehouseAudit(models.Model):
+    audit_no = models.CharField(max_length=50, unique=True, blank=True)
+    invoice_no = models.CharField(max_length=100) # Linking to InvoiceShipment
+    audit_date = models.DateTimeField(auto_now_add=True)
+    audited_by = models.CharField(max_length=100)
+    
+    # Auto-fetched from Invoice
+    item_code = models.CharField(max_length=100, blank=True, null=True)
+    expected_qty = models.IntegerField(default=0)
+    
+    # Physical Verification Data
+    actual_qty = models.IntegerField(default=0)
+    status = models.CharField(max_length=50, default='Pending') # Matched / Discrepancy
+    remarks = models.TextField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        # 1. Auto-generate Audit Number (e.g., AUD-0001)
+        if not self.audit_no:
+            last_audit = WarehouseAudit.objects.order_by('id').last()
+            if last_audit and last_audit.audit_no.startswith('AUD-'):
+                try:
+                    last_id = int(last_audit.audit_no.split('-')[1])
+                    self.audit_no = f"AUD-{last_id + 1:04d}"
+                except:
+                    self.audit_no = "AUD-0001"
+            else:
+                self.audit_no = "AUD-0001"
+        
+        # 2. Smart Status Update (The Core Logic)
+        if int(self.actual_qty) == int(self.expected_qty):
+            self.status = 'Matched'
+        else:
+            self.status = 'Discrepancy'
+            
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.audit_no} - {self.invoice_no}"
