@@ -1,13 +1,23 @@
 from rest_framework import serializers
 from django.db import transaction
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant,ProductModel,InvoiceShipment,Seller,ApprovalRequest, ApprovalItem,GRPORecord,Ticket,RefundRecord
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel, InvoiceShipment, Seller, ApprovalRequest, ApprovalItem, GRPORecord, Ticket, RefundRecord
 
 class OrderReportSerializer(serializers.ModelSerializer):
     # Virtual fields takaki agar DB mein column blank ho toh crash na ho
     seller_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     seller_gstn = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    
+    # 🔥 NAYE DYNAMIC FIELDS JO FRONTEND MATRIX/TABLE KO CHAHIYE 🔥
     delivered_qty = serializers.SerializerMethodField()
     delivered_amount = serializers.SerializerMethodField()
+    cancel_qty = serializers.SerializerMethodField()
+    pending_qty = serializers.SerializerMethodField()
+    discrepancy_qty = serializers.SerializerMethodField()
+    discrepancy_amount = serializers.SerializerMethodField()
+    refund_qty = serializers.SerializerMethodField()
+    pending_refund = serializers.SerializerMethodField()
+    grpo_qty = serializers.SerializerMethodField()
+    grpo_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderReport
@@ -62,31 +72,94 @@ class OrderReportSerializer(serializers.ModelSerializer):
                 
         return data
 
-    # 🔥 CRASH-PROOF METHOD (Local import for Sum and InvoiceShipment) 🔥
+    # --- 🔥 CRASH-PROOF MATH CALCULATIONS FOR ORDER REPORT 🔥 ---
+    
     def get_delivered_qty(self, obj):
         try:
             from django.db.models import Sum
             from .models import InvoiceShipment
-            shipments = InvoiceShipment.objects.filter(
-                order_id=obj.order_id, 
-                asin_fsn=obj.asin_fsn, 
-                delivery_status='Delivered'
-            )
+            shipments = InvoiceShipment.objects.filter(order_id=obj.order_id, asin_fsn=obj.asin_fsn, delivery_status='Delivered')
             return shipments.aggregate(Sum('invoice_qty'))['invoice_qty__sum'] or 0
         except Exception:
             return 0
 
-    # 🔥 CRASH-PROOF METHOD 🔥
     def get_delivered_amount(self, obj):
         try:
             from django.db.models import Sum
             from .models import InvoiceShipment
-            shipments = InvoiceShipment.objects.filter(
-                order_id=obj.order_id, 
-                asin_fsn=obj.asin_fsn, 
-                delivery_status='Delivered'
-            )
+            shipments = InvoiceShipment.objects.filter(order_id=obj.order_id, asin_fsn=obj.asin_fsn, delivery_status='Delivered')
             return float(shipments.aggregate(Sum('invoice_amount'))['invoice_amount__sum'] or 0.0)
+        except Exception:
+            return 0.0
+
+    def get_cancel_qty(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import InvoiceShipment
+            shipments = InvoiceShipment.objects.filter(order_id=obj.order_id, asin_fsn=obj.asin_fsn, delivery_status__icontains='Cancel')
+            return shipments.aggregate(Sum('invoice_qty'))['invoice_qty__sum'] or 0
+        except Exception:
+            return 0
+
+    def get_pending_qty(self, obj):
+        try:
+            del_qty = self.get_delivered_qty(obj)
+            can_qty = self.get_cancel_qty(obj)
+            qty = (obj.order_qty or 0) - del_qty - can_qty
+            return qty if qty > 0 else 0
+        except Exception:
+            return 0
+
+    def get_discrepancy_qty(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import Ticket
+            return Ticket.objects.filter(order_id=obj.order_id, asin=obj.asin_fsn).aggregate(Sum('discrepancy_qty'))['discrepancy_qty__sum'] or 0
+        except Exception:
+            return 0
+
+    def get_discrepancy_amount(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import Ticket
+            return float(Ticket.objects.filter(order_id=obj.order_id, asin=obj.asin_fsn).aggregate(Sum('discrepancy_amount'))['discrepancy_amount__sum'] or 0.0)
+        except Exception:
+            return 0.0
+
+    def get_refund_qty(self, obj):
+        try:
+            from .models import RefundRecord
+            return RefundRecord.objects.filter(order_id=obj.order_id).count()
+        except Exception:
+            return 0
+
+    def get_pending_refund(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import InvoiceShipment, RefundRecord
+            can_amt = float(InvoiceShipment.objects.filter(order_id=obj.order_id, asin_fsn=obj.asin_fsn, delivery_status__icontains='Cancel').aggregate(Sum('invoice_amount'))['invoice_amount__sum'] or 0.0)
+            disc_amt = self.get_discrepancy_amount(obj)
+            rec_amt = float(RefundRecord.objects.filter(order_id=obj.order_id, refund_status='Completed').aggregate(Sum('invoice_amount'))['invoice_amount__sum'] or 0.0)
+            pending = (can_amt + disc_amt) - rec_amt
+            return pending if pending > 0 else 0.0
+        except Exception:
+            return 0.0
+
+    def get_grpo_qty(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import InvoiceShipment, GRPORecord
+            inv_nos = InvoiceShipment.objects.filter(order_id=obj.order_id, asin_fsn=obj.asin_fsn).values_list('invoice_no', flat=True)
+            return int(GRPORecord.objects.filter(grpo_invoice_number__in=inv_nos, item_code=obj.asin_fsn).aggregate(Sum('grpo_quantity'))['grpo_quantity__sum'] or 0)
+        except Exception:
+            return 0
+
+    def get_grpo_amount(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import InvoiceShipment, GRPORecord
+            inv_nos = InvoiceShipment.objects.filter(order_id=obj.order_id, asin_fsn=obj.asin_fsn).values_list('invoice_no', flat=True)
+            return float(GRPORecord.objects.filter(grpo_invoice_number__in=inv_nos, item_code=obj.asin_fsn).aggregate(Sum('grpo_amt'))['grpo_amt__sum'] or 0.0)
         except Exception:
             return 0.0
 
@@ -111,16 +184,26 @@ class MerchantSerializer(serializers.ModelSerializer):
     class Meta:
         model = Merchant
         fields = '__all__'    
+        
 class ProductModelSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductModel
         fields = '__all__'    
+        
 class SellerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Seller
         fields = '__all__'                
+
 # -------------------------INVOICE SHIPMENT---------------------------------------
 class InvoiceShipmentSerializer(serializers.ModelSerializer):
+    # 🔥 NAYE DYNAMIC FIELDS JO FRONTEND MATRIX/TABLE KO CHAHIYE 🔥
+    grpo_qty = serializers.SerializerMethodField()
+    grpo_pending_qty = serializers.SerializerMethodField()
+    grpo_pending_amount = serializers.SerializerMethodField()
+    discrepancy_amount = serializers.SerializerMethodField()
+    refund_discrepancy_amount = serializers.SerializerMethodField()
+
     class Meta:
         model = InvoiceShipment
         fields = '__all__'
@@ -149,6 +232,44 @@ class InvoiceShipmentSerializer(serializers.ModelSerializer):
                 
         return data       
 
+    # --- 🔥 CRASH-PROOF MATH CALCULATIONS FOR INVOICE SHIPMENT 🔥 ---
+    
+    def get_grpo_qty(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import GRPORecord
+            return int(GRPORecord.objects.filter(grpo_invoice_number=obj.invoice_no, item_code=obj.asin_fsn).aggregate(Sum('grpo_quantity'))['grpo_quantity__sum'] or 0)
+        except Exception:
+            return 0
+
+    def get_grpo_pending_qty(self, obj):
+        try:
+            qty = (obj.invoice_qty or 0) - self.get_grpo_qty(obj)
+            return qty if qty > 0 else 0
+        except Exception:
+            return 0
+
+    def get_grpo_pending_amount(self, obj):
+        try:
+            return float(self.get_grpo_pending_qty(obj)) * float(obj.unit_price or 0.0)
+        except Exception:
+            return 0.0
+
+    def get_discrepancy_amount(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import Ticket
+            return float(Ticket.objects.filter(invoice_no=obj.invoice_no, asin=obj.asin_fsn).aggregate(Sum('discrepancy_amount'))['discrepancy_amount__sum'] or 0.0)
+        except Exception:
+            return 0.0
+
+    def get_refund_discrepancy_amount(self, obj):
+        try:
+            from django.db.models import Sum
+            from .models import Ticket
+            return float(Ticket.objects.filter(invoice_no=obj.invoice_no, asin=obj.asin_fsn).aggregate(Sum('refund_received_amt'))['refund_received_amt__sum'] or 0.0)
+        except Exception:
+            return 0.0
 
 #APPROVAL SERIALISERS---------------     
 class ApprovalItemSerializer(serializers.ModelSerializer):
@@ -213,6 +334,7 @@ class ApprovalRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "error": f"Database Save Error: {str(e)}"
             })
+            
     @transaction.atomic
     def update(self, instance, validated_data):
         try:
@@ -254,10 +376,7 @@ class ModelDropdownSerializer(serializers.ModelSerializer):
         model = ProductModel
         fields = ['id', 'asin_fsn', 'model_name', 'model']    
 
-
-
 # grpo 
-
 from .models import GRPORecord
 
 # ------------------------- GRPO SERIALIZER -------------------------
