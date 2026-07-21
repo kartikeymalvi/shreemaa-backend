@@ -578,3 +578,107 @@ class WarehouseAudit(models.Model):
 
     def __str__(self):
         return f"{self.audit_no} - {self.invoice_no}"
+
+
+# --- IMEI & PDF RECORD MODEL ---
+class IMEIRecord(models.Model):
+    invoice_no = models.CharField(max_length=255)
+    asin = models.CharField(max_length=255)
+    imei_number = models.CharField(max_length=255, unique=True)
+    invoice_pdf = models.FileField(upload_to='invoices_pdf/', null=True, blank=True)
+    uploaded_by = models.CharField(max_length=255, null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.imei_number} - {self.invoice_no}"
+
+
+class Settlement(models.Model):
+    txn_id = models.CharField(max_length=50, unique=True, blank=True)
+    date = models.DateField()
+    firm_name = models.CharField(max_length=255)
+    card_number = models.CharField(max_length=100)
+    
+    # Types of Settlement
+    txn_type = models.CharField(max_length=50, choices=[
+        ('Opening Balance', 'Opening Balance'), 
+        ('Refill', 'Refill'), 
+        ('Manual Adjustment', 'Manual Adjustment')
+    ])
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    remarks = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.txn_id:
+            last_rec = Settlement.objects.order_by('id').last()
+            if last_rec and last_rec.txn_id.startswith('SET-'):
+                try:
+                    new_id = int(last_rec.txn_id.split('-')[1]) + 1
+                    self.txn_id = f"SET-{new_id:04d}"
+                except:
+                    self.txn_id = "SET-0001"
+            else:
+                self.txn_id = "SET-0001"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.txn_id} - {self.card_number} - {self.amount}"
+
+class FinanceReconciliation(models.Model):
+    date = models.DateField()
+    firm_name = models.CharField(max_length=255)
+    card_number = models.CharField(max_length=100)
+    
+    # Auto-calculated from Orders & Refunds
+    system_debit = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    system_credit = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
+    # Manual Entry by Accounts Team for verification
+    account_posting_amount = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    
+    status = models.CharField(max_length=50, default='Pending', choices=[
+        ('Pending', 'Pending'),
+        ('Matched', 'Matched'),
+        ('Discrepancy', 'Discrepancy')
+    ])
+    remarks = models.TextField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Ek din mein ek card aur firm ka ek hi reconciliation record hoga
+        unique_together = ('date', 'firm_name', 'card_number')
+
+    def __str__(self):
+        return f"{self.date} - {self.card_number} - {self.status}"
+
+
+class UserProfile(models.Model):
+    # Agar aap Django ka default User use kar rahe hain toh usse link karein
+    email = models.EmailField(unique=True)
+    display_name = models.CharField(max_length=255, blank=True, null=True)
+    role = models.CharField(max_length=100, default='Warehouse')
+    assigned_firms = models.CharField(max_length=255, default='All Firms')
+    assigned_locations = models.CharField(max_length=255, default='All Locations')
+    first_signed_in = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.email
+
+class RolePermission(models.Model):
+    section = models.CharField(max_length=100) # e.g., 'Masters', 'Orders', 'Invoices'
+    role = models.CharField(max_length=100)    # e.g., 'Warehouse', 'Order Team'
+    
+    can_read = models.BooleanField(default=True)
+    can_create = models.BooleanField(default=False)
+    can_change = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+    can_approve = models.BooleanField(default=False)
+    can_administer = models.BooleanField(default=False)
+
+    class Meta:
+        # Ek section mein ek role ki ek hi setting hogi
+        unique_together = ('section', 'role')
+
+    def __str__(self):
+        return f"{self.role} - {self.section}"

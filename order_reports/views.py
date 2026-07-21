@@ -1536,8 +1536,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel,PurchaseInward, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket,WarehouseAudit
-from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer,PurchaseInwardSerializer,WarehouseAuditSerializer
+from .models import OrderReport, ColumnVisibilityPolicy, Firm, Location, Merchant, ProductModel,PurchaseInward, InvoiceShipment,OrderReport,InwardRecord, RefundRecord,ProductModel,Seller,ApprovalRequest,GRPORecord,Ticket,WarehouseAudit,IMEIRecord,Settlement, FinanceReconciliation,UserProfile, RolePermission
+from .serializers import OrderReportSerializer, ColumnVisibilityPolicySerializer, FirmSerializer, LocationSerializer, MerchantSerializer, ProductModelSerializer, InvoiceShipmentSerializer,SellerSerializer,ApprovalRequestSerializer,ApprovalRequestSerializer, FirmDropdownSerializer, LocationDropdownSerializer, MerchantDropdownSerializer, ModelDropdownSerializer,GRPORecordSerializer,TicketSerializer,RefundRecordSerializer,PurchaseInwardSerializer,WarehouseAuditSerializer,IMEIRecordSerializer,UserProfileSerializer, RolePermissionSerializer,SettlementSerializer, FinanceReconciliationSerializer
 import pandas as pd
 from django.utils import timezone
 from django.db.models import Sum, Count
@@ -3082,3 +3082,121 @@ def fetch_invoice_for_audit(request, invoice_no):
         
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class IMEIRecordViewSet(viewsets.ModelViewSet):
+    queryset = IMEIRecord.objects.all().order_by('-id')
+    serializer_class = IMEIRecordSerializer
+    permission_classes = [IsAuthenticated]    
+
+
+class AccountsLedgerAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        card_no = request.query_params.get('card_number')
+        firm = request.query_params.get('firm_name')
+
+        if not card_no or not firm:
+            return Response({"error": "Please provide both card_number and firm_name"}, status=400)
+
+        ledger_entries = []
+
+        # -------------------------------------------------------------
+        # 1. SETTLEMENTS -> Treat as CREDIT (Money In)
+        # Fields: card_number, firm_name, date, amount
+        # -------------------------------------------------------------
+        settlements = Settlement.objects.filter(card_number=card_no, firm_name=firm)
+        for s in settlements:
+            if s.date:
+                ledger_entries.append({
+                    "date": str(s.date),
+                    "ref_no": s.txn_id,
+                    "type": s.txn_type,
+                    "debit": 0.00,
+                    "credit": float(s.amount or 0),
+                    "remarks": s.remarks or "Manual Entry / Refill"
+                })
+
+        # -------------------------------------------------------------
+        # 2. ORDERS (PURCHASES) -> Treat as DEBIT (Money Out)
+        # Fields: card_no, firm, txn_date, order_amount
+        # -------------------------------------------------------------
+        orders = OrderReport.objects.filter(card_no=card_no, firm=firm)
+        for o in orders:
+            if o.txn_date:
+                ledger_entries.append({
+                    "date": str(o.txn_date),
+                    "ref_no": o.order_id,
+                    "type": "Order Purchase",
+                    "debit": float(o.order_amount or 0),
+                    "credit": 0.00,
+                    "remarks": f"ASIN: {o.asin_fsn} | Model: {o.model_name or ''}"
+                })
+
+        # -------------------------------------------------------------
+        # 3. REFUNDS -> Treat as CREDIT (Money Back In)
+        # Fields: received_card_no, firm, received_date, invoice_amount
+        # -------------------------------------------------------------
+        # Note: In your model, refund amount is tracked in `invoice_amount` 
+        # and card is `received_card_no` when updated manually.
+        refunds = RefundRecord.objects.filter(received_card_no=card_no, firm=firm)
+        for r in refunds:
+            # We prioritize received_date, fallback to created_at
+            r_date = r.received_date if r.received_date else (r.created_at.date() if r.created_at else None)
+            if r_date:
+                ledger_entries.append({
+                    "date": str(r_date),
+                    "ref_no": r.order_id,
+                    "type": f"Refund - {r.refund_type or 'General'}",
+                    "debit": 0.00,
+                    "credit": float(r.invoice_amount or 0),
+                    "remarks": r.received_comment or "Refund Processed"
+                })
+
+        # -------------------------------------------------------------
+        # 4. SORTING & CALCULATING RUNNING BALANCE
+        # -------------------------------------------------------------
+        # Date ke hisaab se ascending order mein sort karenge
+        ledger_entries.sort(key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d'))
+
+        running_balance = 0.0
+        for entry in ledger_entries:
+            # Credit (Paisa aaya) - Debit (Paisa gaya)
+            running_balance += entry['credit'] - entry['debit']
+            # Balance column mein update kar diya
+            entry['balance'] = round(running_balance, 2)
+
+        return Response(ledger_entries)
+
+class FinanceReconciliationViewSet(viewsets.ModelViewSet):
+    queryset = FinanceReconciliation.objects.all().order_by('-date', '-id')
+    serializer_class = FinanceReconciliationSerializer
+    permission_classes = [IsAuthenticated]    
+
+
+class UserProfileViewSet(viewsets.ModelViewSet):
+    queryset = UserProfile.objects.all().order_by('-id')
+    serializer_class = UserProfileSerializer
+
+class RolePermissionViewSet(viewsets.ModelViewSet):
+    queryset = RolePermission.objects.all()
+    serializer_class = RolePermissionSerializer
+
+    # Ek custom API jo ek sath saari permissions save karegi (Matrix save)
+    @action(detail=False, methods=['post'])
+    def bulk_update(self, request):
+        data_list = request.data
+        for item in data_list:
+            RolePermission.objects.update_or_create(
+                section=item['section'],
+                role=item['role'],
+                defaults={
+                    'can_read': item.get('can_read', False),
+                    'can_create': item.get('can_create', False),
+                    'can_change': item.get('can_change', False),
+                    'can_delete': item.get('can_delete', False),
+                    'can_approve': item.get('can_approve', False),
+                    'can_administer': item.get('can_administer', False),
+                }
+            )
+        return Response({"status": "Permissions Updated Successfully"})

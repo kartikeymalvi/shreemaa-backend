@@ -28,7 +28,7 @@ from .views import (
     cancel_order_to_refund,
     DashboardStatsView,
     fetch_invoice_for_grpo,
-    PurchaseInwardViewSet, fetch_grpo_for_inward,WarehouseAuditViewSet, fetch_invoice_for_audit
+    PurchaseInwardViewSet, fetch_grpo_for_inward,WarehouseAuditViewSet, fetch_invoice_for_audit,IMEIRecordViewSet,FinanceReconciliationViewSet,UserProfileViewSet, RolePermissionViewSet
 )
 # Naye master routes ke liye router
 router = DefaultRouter()
@@ -44,6 +44,8 @@ router.register(r'tickets', TicketViewSet, basename='ticket')
 #approval path -----------
 router.register(r'approvals', ApprovalViewSet, basename='approval')
 
+router.register(r'finance-reconciliation', FinanceReconciliationViewSet, basename='finance-reconciliation')
+
 #--------------INVOICE-SHIPMENT ROUTE --------------------
 router.register(r'shipments', InvoiceShipmentViewSet, basename='shipments')
 router.register(r'refunds', RefundRecordViewSet, basename='refund')
@@ -52,6 +54,10 @@ router.register(r'refunds', RefundRecordViewSet, basename='refund')
 router.register(r'purchase-inward', PurchaseInwardViewSet, basename='purchase-inward')
 
 router.register(r'warehouse-audit', WarehouseAuditViewSet, basename='warehouse-audit')
+router.register(r'imei-records', IMEIRecordViewSet, basename='imei-records')
+
+router.register(r'user-profiles', UserProfileViewSet, basename='user-profiles')
+router.register(r'role-permissions', RolePermissionViewSet, basename='role-permissions')
 
 urlpatterns = [
     # bulk -delete path ---
