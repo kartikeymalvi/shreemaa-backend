@@ -28,6 +28,7 @@ from .views import (
     cancel_order_to_refund,
     DashboardStatsView,
     fetch_invoice_for_grpo,
+    AccountsLedgerAPIView,
     PurchaseInwardViewSet, fetch_grpo_for_inward,WarehouseAuditViewSet, fetch_invoice_for_audit,IMEIRecordViewSet,FinanceReconciliationViewSet,UserProfileViewSet, RolePermissionViewSet,SettlementViewSet
 )
 # Naye master routes ke liye router
@@ -59,6 +60,7 @@ router.register(r'imei-records', IMEIRecordViewSet, basename='imei-records')
 router.register(r'user-profiles', UserProfileViewSet, basename='user-profiles')
 router.register(r'role-permissions', RolePermissionViewSet, basename='role-permissions')
 router.register(r'settlements', SettlementViewSet, basename='settlements')
+path('accounts-ledger/', AccountsLedgerAPIView.as_view(), name='accounts-ledger'),
 
 urlpatterns = [
     # bulk -delete path ---
