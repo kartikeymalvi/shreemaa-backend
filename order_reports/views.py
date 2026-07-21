@@ -3200,3 +3200,9 @@ class RolePermissionViewSet(viewsets.ModelViewSet):
                 }
             )
         return Response({"status": "Permissions Updated Successfully"})
+
+
+class SettlementViewSet(viewsets.ModelViewSet):
+    queryset = Settlement.objects.all().order_by('-date', '-id')
+    serializer_class = SettlementSerializer
+    permission_classes = [IsAuthenticated]
