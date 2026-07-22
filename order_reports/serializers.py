@@ -383,8 +383,7 @@ from .models import GRPORecord
 class GRPORecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = GRPORecord
-        fields = '__all__'  
-
+        fields = '__all__'
 # ticket               
 
 class TicketSerializer(serializers.ModelSerializer):

@@ -4232,47 +4232,75 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def upload_excel(self, request):
         file = request.FILES.get('file')
-        if not file: return Response({"error": "No file uploaded!"}, status=400)
+        if not file: 
+            return Response({"error": "No file uploaded!"}, status=400)
         
         try:
-            if file.name.endswith('.csv'): df = pd.read_csv(file)
-            else: df = pd.read_excel(file)
+            file.seek(0) # Safety check for file reading
+            if file.name.endswith('.csv'): 
+                df = pd.read_csv(file)
+            else: 
+                df = pd.read_excel(file)
+            
+            # Lowercase headers to avoid Case Sensitive issues
+            df.columns = [str(col).strip().lower() for col in df.columns]
             df = df.fillna('')
             
             valid_invoices = set(InvoiceShipment.objects.exclude(invoice_no='').values_list('invoice_no', flat=True))
-            records, skipped_count = [], 0
+            
+            created_count, updated_count, skipped_count = 0, 0, 0
+            successful_invoices = []
             
             for index, row in df.iterrows():
                 inv_no = str(row.get('grpo_invoice_number', '')).strip()
-                if inv_no not in valid_invoices:
+                
+                # Check 1: Must have invoice number and should be valid
+                if not inv_no or inv_no not in valid_invoices:
                     skipped_count += 1
                     continue
                 
                 grpo_qty = str(row.get('grpo_quantity', '0')).replace(',', '').strip()
                 grpo_amt = str(row.get('grpo_amt', '0')).replace(',', '').strip()
 
-                records.append(GRPORecord(
-                    firm_name=str(row.get('firm_name', '')),
-                    internal_number=str(row.get('internal_number', '')),
-                    grpo_status=str(row.get('grpo_status', 'Open')),
-                    grpo_user_name=str(row.get('grpo_user_name', '')),
-                    grpo_no=str(row.get('grpo_no', '')),
+                # 🔥 FIX 1: Prevent Duplicates using update_or_create (Checks by Invoice Number)
+                obj, created = GRPORecord.objects.update_or_create(
                     grpo_invoice_number=inv_no,
-                    grpo_create_date=str(row.get('grpo_create_date', '')),
-                    grpo_posting_date=str(row.get('grpo_posting_date', '')),
-                    purchase_vendor_code=str(row.get('purchase_vendor_code', '')),
-                    purchase_vendor_name=str(row.get('purchase_vendor_name', '')),
-                    inward_whs_code=str(row.get('inward_whs_code', '')),
-                    item_code=str(row.get('item_code', '')),
-                    description=str(row.get('description', '')),
-                    grpo_quantity=float(grpo_qty) if grpo_qty.replace('.','',1).isdigit() else 0.0,
-                    grpo_amt=float(grpo_amt) if grpo_amt.replace('.','',1).isdigit() else 0.0,
-                ))
+                    defaults={
+                        'firm_name': str(row.get('firm_name', '')),
+                        'internal_number': str(row.get('internal_number', '')),
+                        'grpo_status': str(row.get('grpo_status', 'Open')),
+                        'grpo_user_name': str(row.get('grpo_user_name', '')),
+                        'grpo_no': str(row.get('grpo_no', '')),
+                        'grpo_create_date': str(row.get('grpo_create_date', '')),
+                        'grpo_posting_date': str(row.get('grpo_posting_date', '')),
+                        'purchase_vendor_code': str(row.get('purchase_vendor_code', '')),
+                        'purchase_vendor_name': str(row.get('purchase_vendor_name', '')),
+                        'inward_whs_code': str(row.get('inward_whs_code', '')),
+                        'item_code': str(row.get('item_code', '')),
+                        'description': str(row.get('description', '')),
+                        'grpo_quantity': float(grpo_qty) if grpo_qty.replace('.','',1).isdigit() else 0.0,
+                        'grpo_amt': float(grpo_amt) if grpo_amt.replace('.','',1).isdigit() else 0.0,
+                    }
+                )
+                
+                if created: 
+                    created_count += 1
+                else: 
+                    updated_count += 1
+                    
+                # Store the invoice number for status update
+                successful_invoices.append(inv_no)
             
-            GRPORecord.objects.bulk_create(records)
-            msg = f"{len(records)} GRPO records successfully imported!"
-            if skipped_count > 0: msg += f" (Warning: {skipped_count} skipped - invalid Invoice No)"
-            return Response({"message": msg}, status=201)
+            # 🔥 FIX 2: Manually update Inward Status in Bulk (Since bulk ignores signals)
+            if successful_invoices:
+                InvoiceShipment.objects.filter(invoice_no__in=successful_invoices).update(inward_status='Done')
+            
+            # Prepare final response message
+            msg = f"Success! Created {created_count}, Updated {updated_count} GRPO records."
+            if skipped_count > 0: 
+                msg += f" (Warning: {skipped_count} skipped - invalid Invoice No)"
+            
+            return Response({"message": msg}, status=201 if (created_count + updated_count) > 0 else 400)
             
         except Exception as e:
             return Response({"error": f"File error: {str(e)}"}, status=500)
@@ -4436,14 +4464,18 @@ class DashboardStatsView(APIView):
 @permission_classes([IsAuthenticated])
 def fetch_invoice_for_grpo(request, invoice_no):
     shipments = InvoiceShipment.objects.filter(invoice_no=invoice_no)
-    if not shipments.exists(): return Response({"error": "Invoice Number not found in database!"}, status=404)
+    if not shipments.exists(): 
+        return Response({"error": "Invoice Number not found in database!"}, status=404)
 
     data = []
     for ship in shipments:
         data.append({
-            "firm_name": ship.firm, "purchase_vendor_name": ship.seller_name,
-            "item_code": ship.asin_fsn, "description": ship.model_name,
-            "grpo_quantity": ship.invoice_qty, "grpo_amt": ship.invoice_amount,
+            "firm_name": ship.firm, 
+            "purchase_vendor_name": ship.seller_name,
+            "item_code": ship.asin_fsn, 
+            "description": ship.model_name,
+            "grpo_quantity": ship.invoice_qty, 
+            "grpo_amt": ship.invoice_amount,
         })
     return Response(data, status=200)   
 
@@ -4457,12 +4489,16 @@ class PurchaseInwardViewSet(viewsets.ModelViewSet):
 def fetch_grpo_for_inward(request, grpo_no):
     try:
         grpo_record = GRPORecord.objects.filter(grpo_no=grpo_no).first()
-        if not grpo_record: return Response({"error": "Bhai, ye GRPO Number database me nahi mila!"}, status=404)
+        if not grpo_record: 
+            return Response({"error": "Bhai, ye GRPO Number database me nahi mila!"}, status=404)
             
         data = {
-            "grpo_no": grpo_record.grpo_no, "firm_name": grpo_record.firm_name,
-            "vendor_name": grpo_record.purchase_vendor_name, "item_code": grpo_record.item_code,
-            "expected_qty": grpo_record.grpo_quantity, "warehouse_location": grpo_record.inward_whs_code,
+            "grpo_no": grpo_record.grpo_no, 
+            "firm_name": grpo_record.firm_name,
+            "vendor_name": grpo_record.purchase_vendor_name, 
+            "item_code": grpo_record.item_code,
+            "expected_qty": grpo_record.grpo_quantity, 
+            "warehouse_location": grpo_record.inward_whs_code,
         }
         return Response(data, status=200)
     except Exception as e:
@@ -4528,11 +4564,11 @@ def create_refund_on_invoice_cancel(sender, instance, created, **kwargs):
                 )
 @receiver(post_save, sender=GRPORecord)
 def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
-    if created: 
-        matching_invoices = InvoiceShipment.objects.filter(invoice_no=instance.grpo_invoice_number)
-        for inv in matching_invoices:
-            inv.inward_status = 'Done' 
-            inv.save()        
+    # Agar GRPO UI se manual banaya gaya hai, toh ye update karega
+    if created and instance.grpo_invoice_number: 
+        InvoiceShipment.objects.filter(
+            invoice_no=instance.grpo_invoice_number
+        ).update(inward_status='Done')      
 
 class WarehouseAuditViewSet(viewsets.ModelViewSet):
     queryset = WarehouseAudit.objects.all().order_by('-id')
