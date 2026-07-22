@@ -4293,7 +4293,12 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
             
             # 🔥 FIX 2: Manually update Inward Status in Bulk (Since bulk ignores signals)
             if successful_invoices:
-                InvoiceShipment.objects.filter(invoice_no__in=successful_invoices).update(inward_status='Done')
+                try:
+                    InvoiceShipment.objects.filter(
+                        invoice_no__in=successful_invoices
+                    ).update(delivery_status='Done') # 👈 Yahan bhi change kiya
+                except Exception as e:
+                    print("Status update warning:", str(e))
             
             # Prepare final response message
             msg = f"Success! Created {created_count}, Updated {updated_count} GRPO records."
@@ -4568,7 +4573,7 @@ def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
     if created and instance.grpo_invoice_number: 
         InvoiceShipment.objects.filter(
             invoice_no=instance.grpo_invoice_number
-        ).update(inward_status='Done')      
+        ).update(delivery_status='Done')      
 
 class WarehouseAuditViewSet(viewsets.ModelViewSet):
     queryset = WarehouseAudit.objects.all().order_by('-id')
