@@ -4296,7 +4296,7 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
                 try:
                     InvoiceShipment.objects.filter(
                         invoice_no__in=successful_invoices
-                    ).update(delivery_status='Done') # 👈 Yahan bhi change kiya
+                    ).update(invoice_status='complete') # 👈 Yahan bhi change kiya
                 except Exception as e:
                     print("Status update warning:", str(e))
             
@@ -4495,7 +4495,7 @@ def fetch_grpo_for_inward(request, grpo_no):
     try:
         grpo_record = GRPORecord.objects.filter(grpo_no=grpo_no).first()
         if not grpo_record: 
-            return Response({"error": "Bhai, ye GRPO Number database me nahi mila!"}, status=404)
+            return Response({"error": " GRPO Number not found"}, status=404)
             
         data = {
             "grpo_no": grpo_record.grpo_no, 
@@ -4573,7 +4573,7 @@ def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
     if created and instance.grpo_invoice_number: 
         InvoiceShipment.objects.filter(
             invoice_no=instance.grpo_invoice_number
-        ).update(delivery_status='Done')      
+        ).update(invoice_status='complete')      
 
 class WarehouseAuditViewSet(viewsets.ModelViewSet):
     queryset = WarehouseAudit.objects.all().order_by('-id')
