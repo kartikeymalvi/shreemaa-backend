@@ -69,7 +69,7 @@ urlpatterns = [
     # bulk -delete path ---
     path('orders/bulk-delete/', bulk_delete_orders, name='bulk-delete-orders'),
     path('invoices/bulk-delete/', bulk_delete_invoices, name='bulk-delete-invoices'),
-    path('models/upload/', upload_models_excel, name='upload_models_excel'),
+    #path('models/upload/', upload_models_excel, name='upload_models_excel'),
     
     #  UPLOAD WALE PATHS HAMESHA UPAR RAKHNE CHAHIYE 
     path('orders/upload/', BulkUploadExcelView.as_view(), name='orders-upload'),
