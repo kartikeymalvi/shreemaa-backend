@@ -1,5 +1,6 @@
 # from pathlib import Path
 # from datetime import timedelta
+# import os
 
 # # Build paths inside the project like this: BASE_DIR / 'subdir'.
 # BASE_DIR = Path(__file__).resolve().parent.parent
@@ -7,11 +8,11 @@
 # # SECURITY WARNING: keep the secret key used in production secret!
 # SECRET_KEY = 'django-insecure-!kg0#bb=%*6_h61(3r%3zew*li@&zonaau^64+t)!b^+)7@xvk'
 
-# # SECURITY WARNING: don't run with debug turned on in production!
+# # 🔥 UPDATE 1: Local testing aur debugging ke liye isey True karna ZAROORI hai!
 # DEBUG = True
 
-# # LOCAL SERVER KE LIYE: Sirf local host ko allow karna
-# ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+# # Allowed hosts mein sab allow kar diya local ke liye
+# ALLOWED_HOSTS = ['*']
 
 # # Application definition
 # INSTALLED_APPS = [
@@ -31,7 +32,9 @@
 # # Custom User Model define karna zaroori hai
 # AUTH_USER_MODEL = 'accounts.CustomUser'
 
-# # --- DEFAULT SQLITE DATABASE (Local Development Ke Liye) ---
+# # Data wahi AWS RDS wala hi use kar rahe hain taaki apka test data na ude
+# # SQLite Database (Local Development)
+
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.sqlite3',
@@ -40,9 +43,9 @@
 # }
 
 # MIDDLEWARE = [
-#     'whitenoise.middleware.WhiteNoiseMiddleware', 
 #     'corsheaders.middleware.CorsMiddleware',
 #     'django.middleware.security.SecurityMiddleware',
+#     'whitenoise.middleware.WhiteNoiseMiddleware',
 #     'django.contrib.sessions.middleware.SessionMiddleware',
 #     'django.middleware.common.CommonMiddleware',
 #     'django.middleware.csrf.CsrfViewMiddleware',
@@ -53,14 +56,34 @@
 
 # ROOT_URLCONF = 'project.urls'
 
-# # --- CORS Settings (Local React ko allow karne ke liye) ---
+# # 🔥 UPDATE 2: CORS and CSRF Settings optimized for local
+# CORS_ALLOW_ALL_ORIGINS = False  
+# CORS_ALLOW_CREDENTIALS = True  
+
 # CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:5173",
-#     "http://localhost:3000",
+#     "http://localhost:3000",  
+#     "http://localhost:5173",  
+#     "http://127.0.0.1:5500", 
 #     "http://127.0.0.1:5173",
-#     "http://127.0.0.1:3000",
+#     "https://smg-erp.duckdns.org",
+#     "https://shreemaa-frontend.vercel.app",
 # ]
-# CORS_ALLOW_CREDENTIALS = True
+
+# CSRF_TRUSTED_ORIGINS = [
+#     "http://localhost:5173",       # <-- Ye line Local testing ke liye add ki hai
+#     "http://127.0.0.1:5173",       # <-- Ye bhi add ki hai
+#     "https://smg-erp.duckdns.org",
+#     "https://shreemaa-frontend.vercel.app",
+# ]
+
+# CORS_ALLOW_METHODS = [
+#     'DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT',
+# ]
+
+# CORS_ALLOW_HEADERS = [
+#     'accept', 'accept-encoding', 'authorization', 'content-type', 'dnt',
+#     'origin', 'user-agent', 'x-csrftoken', 'x-requested-with',
+# ]
 
 # # DRF & JWT Settings
 # REST_FRAMEWORK = {
@@ -92,7 +115,6 @@
 
 # WSGI_APPLICATION = 'project.wsgi.application'
 
-# # Password validation
 # AUTH_PASSWORD_VALIDATORS = [
 #     { 'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator', },
 #     { 'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', },
@@ -100,15 +122,16 @@
 #     { 'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator', },
 # ]
 
-# # Internationalization
 # LANGUAGE_CODE = 'en-us'
-# TIME_ZONE = 'UTC'
+# TIME_ZONE = 'Asia/Kolkata'
 # USE_I18N = True
 # USE_TZ = True
 
-# # Static files (CSS, JavaScript, Images)
 # STATIC_URL = 'static/'
 # STATIC_ROOT = BASE_DIR / 'staticfiles'
+# STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # -------------------LIVE SETUP AWS ------------------------------------

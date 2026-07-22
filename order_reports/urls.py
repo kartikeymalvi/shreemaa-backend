@@ -2,9 +2,9 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    OrderReportListCreateView, 
+    
     BulkUploadExcelView, 
-    OrderReportDetailView,
+    
     ColumnVisibilityView, 
     FirmViewSet, 
     LocationViewSet, 
@@ -25,12 +25,15 @@ from .views import (
     DownloadApprovalPDF,
     TicketViewSet,
     RefundRecordViewSet,
-    cancel_order_to_refund,
+    
     DashboardStatsView,
     fetch_invoice_for_grpo,
     AccountsLedgerAPIView,
-    PurchaseInwardViewSet, fetch_grpo_for_inward,WarehouseAuditViewSet, fetch_invoice_for_audit,IMEIRecordViewSet,FinanceReconciliationViewSet,UserProfileViewSet, RolePermissionViewSet,SettlementViewSet
+    PurchaseInwardViewSet, fetch_grpo_for_inward,WarehouseAuditViewSet, fetch_invoice_for_audit,IMEIRecordViewSet,FinanceReconciliationViewSet,UserProfileViewSet, RolePermissionViewSet,SettlementViewSet,
+    OrderReportViewSet
+
 )
+
 # Naye master routes ke liye router
 router = DefaultRouter()
 router.register(r'firms', FirmViewSet)
@@ -60,7 +63,7 @@ router.register(r'imei-records', IMEIRecordViewSet, basename='imei-records')
 router.register(r'user-profiles', UserProfileViewSet, basename='user-profiles')
 router.register(r'role-permissions', RolePermissionViewSet, basename='role-permissions')
 router.register(r'settlements', SettlementViewSet, basename='settlements')
-path('accounts-ledger/', AccountsLedgerAPIView.as_view(), name='accounts-ledger'),
+router.register(r'orders', OrderReportViewSet, basename='orders')
 
 urlpatterns = [
     # bulk -delete path ---
@@ -71,8 +74,8 @@ urlpatterns = [
     #  UPLOAD WALE PATHS HAMESHA UPAR RAKHNE CHAHIYE 
     path('orders/upload/', BulkUploadExcelView.as_view(), name='orders-upload'),
     
-    path('orders/', OrderReportListCreateView.as_view(), name='orders-list-create'),
-    path('orders/<int:pk>/', OrderReportDetailView.as_view(), name='orders-detail'),
+    
+    
     path('column-policy/', ColumnVisibilityView.as_view(), name='column-policy'),
     
     #--------------INVOICE-SHIPMENT ROUTE --------------------
@@ -87,12 +90,14 @@ urlpatterns = [
     path('export/invoices/', ExportInvoiceShipmentExcelView.as_view(), name='export-invoices'),
     path('approvals/<int:pk>/pdf/', DownloadApprovalPDF.as_view(), name='download-approval-pdf'),
 
-    path('orders/<int:pk>/cancel/', cancel_order_to_refund, name='cancel-order'),
+    
     path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('fetch-invoice-grpo/<str:invoice_no>/', fetch_invoice_for_grpo, name='fetch-invoice-grpo'),
     
     path('fetch-grpo-inward/<str:grpo_no>/', fetch_grpo_for_inward, name='fetch-grpo-inward'),
     path('fetch-invoice-audit/<str:invoice_no>/', fetch_invoice_for_audit, name='fetch-invoice-audit'),
+    path('accounts-ledger/', AccountsLedgerAPIView.as_view(), name='accounts-ledger'),
+    
     
     # Ye line sabhi master APIs ko automatically add karne ke liye (/api/reports/firms/, etc.)
     path('', include(router.urls)),
