@@ -4291,12 +4291,16 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
                 # Store the invoice number for status update
                 successful_invoices.append(inv_no)
             
-            # 🔥 FIX 2: Manually update Inward Status in Bulk (Since bulk ignores signals)
+           
+            # 🔥 FIX 2: Manually update Inward & Delivery Status in Bulk
             if successful_invoices:
                 try:
                     InvoiceShipment.objects.filter(
                         invoice_no__in=successful_invoices
-                    ).update(inward_status='done') # 👈 Yahan bhi change kiya
+                    ).update(
+                        delivery_status='Done',
+                        inward_status='Done'  # 👈 Nayi field yahan bhi add kar di
+                    )
                 except Exception as e:
                     print("Status update warning:", str(e))
             
@@ -4569,11 +4573,13 @@ def create_refund_on_invoice_cancel(sender, instance, created, **kwargs):
                 )
 @receiver(post_save, sender=GRPORecord)
 def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
-    # Agar GRPO UI se manual banaya gaya hai, toh ye update karega
     if created and instance.grpo_invoice_number: 
         InvoiceShipment.objects.filter(
             invoice_no=instance.grpo_invoice_number
-        ).update(inward_status='done')      
+        ).update(
+            delivery_status='Done',
+            inward_status='Done'  # 👈 Nayi field yahan add kar di
+        )     
 
 class WarehouseAuditViewSet(viewsets.ModelViewSet):
     queryset = WarehouseAudit.objects.all().order_by('-id')
