@@ -3522,7 +3522,9 @@ class MasterBulkOperationsMixin:
         file = request.FILES.get('file')
         if not file:
             return Response({"error": "Please upload a valid Excel or CSV file."}, status=400)
+        
         try:
+            # 1. Encoding Fail-Safe File Reader
             if file.name.endswith('.csv'):
                 try: df = pd.read_csv(file)
                 except UnicodeDecodeError:
@@ -3531,15 +3533,17 @@ class MasterBulkOperationsMixin:
             else:
                 df = pd.read_excel(file)
             
+            # 2. Smart Column Cleanup (Handle hidden BOM characters and spaces)
             df.columns = [str(col).strip().lower().replace('\ufeff', '').replace('ï»¿', '') for col in df.columns]
             df = df.where(pd.notnull(df), None)
             
+            # 3. Robust Column Mapping Dictionary
             col_map = {
                 'name': ['name', 'firm name', 'location name', 'merchant name', 'seller name', 'firm', 'location', 'merchant', 'vendor'],
                 'gstn_no': ['gstn number', 'gstn_no', 'gstn', 'gstin', 'gstn no'], 
-                'asin_fsn': ['asin/fsn', 'asin_fsn', 'asin', 'fsn', 'asn_fsn'],
-                'model_name': ['model name', 'model_name'],
-                'model': ['model code', 'model', 'model no'],
+                'asin_fsn': ['asin/fsn', 'asin_fsn', 'asin', 'fsn', 'asn_fsn', 'product id'],
+                'model_name': ['model name', 'model_name', 'product name'],
+                'model': ['model code', 'model', 'model no', 'model number'],
                 'sap_polyshri': ['sap polyshri', 'sap_polyshri'],
                 'sap_rio': ['sap rio', 'sap_rio'],
                 'sap_ne': ['sap ne', 'sap_ne'],
@@ -3547,6 +3551,7 @@ class MasterBulkOperationsMixin:
                 'sap_smmpl': ['sap smmpl', 'sap_smmpl']
             }
 
+            # Map the exact uploaded column names to database keys
             actual_cols = {}
             for db_field, aliases in col_map.items():
                 for alias in aliases:
@@ -3554,29 +3559,41 @@ class MasterBulkOperationsMixin:
                         actual_cols[db_field] = alias
                         break
 
-            created_count, updated_count = 0, 0
+            # Check if the unique field exists in the uploaded file
+            unique_col_name = actual_cols.get(self.unique_field)
+            if not unique_col_name:
+                return Response({"error": f"Upload failed! Missing critical column for '{self.unique_field}'."}, status=400)
+
+            # 4. Smart Process Loop
+            created_count, updated_count, skipped_count = 0, 0, 0
+            
             for _, row in df.iterrows():
-                unique_col_name = actual_cols.get(self.unique_field)
-                if not unique_col_name:
-                    return Response({"error": f"Upload failed! Could not find valid column for '{self.unique_field}'."}, status=400)
-                
+                # Extract Unique Value safely
                 unique_val = str(row.get(unique_col_name, '')).strip()
-                if not unique_val or unique_val == 'None' or unique_val == 'nan': 
+                if not unique_val or unique_val.lower() in ['none', 'nan', 'null', '']: 
+                    skipped_count += 1
                     continue  
                 
+                # Extract Update Fields safely
                 defaults = {}
                 for field in self.update_fields:
                     col_name = actual_cols.get(field)
                     if col_name and row.get(col_name) is not None:
-                        defaults[field] = str(row.get(col_name)).strip()
+                        val = str(row.get(col_name)).strip()
+                        if val.lower() not in ['none', 'nan', 'null']:
+                            defaults[field] = val
                 
+                # Perform the DB Transaction
                 obj, created = model_class.objects.update_or_create(
                     **{self.unique_field: unique_val}, defaults=defaults
                 )
+                
                 if created: created_count += 1
                 else: updated_count += 1
                 
-            return Response({"message": f"Success! Added {created_count} new, Updated {updated_count} existing records."}, status=200)
+            msg = f"Saved {created_count} models, Updated {updated_count} models. Failed: {skipped_count}."
+            return Response({"message": msg}, status=200 if (created_count+updated_count)>0 else 400)
+            
         except Exception as e:
             return Response({"error": f"Error processing file: {str(e)}"}, status=400)
 
