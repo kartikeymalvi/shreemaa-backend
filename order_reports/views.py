@@ -4298,8 +4298,8 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
                     InvoiceShipment.objects.filter(
                         invoice_no__in=successful_invoices
                     ).update(
-                        delivery_status='Done',
-                        inward_status='Done'  # 👈 Nayi field yahan bhi add kar di
+                        delivery_status='Complete',
+                        inward_status='Complete'  # 👈 Nayi field yahan bhi add kar di
                     )
                 except Exception as e:
                     print("Status update warning:", str(e))
@@ -4577,8 +4577,8 @@ def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
         InvoiceShipment.objects.filter(
             invoice_no=instance.grpo_invoice_number
         ).update(
-            delivery_status='Done',
-            inward_status='Done'  # 👈 Nayi field yahan add kar di
+            delivery_status='Complete',
+            inward_status='Complete'  # 👈 Nayi field yahan add kar di
         )     
 
 class WarehouseAuditViewSet(viewsets.ModelViewSet):
