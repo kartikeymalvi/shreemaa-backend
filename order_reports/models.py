@@ -163,6 +163,7 @@ class InvoiceShipment(models.Model):
     asin_fsn = models.CharField(max_length=150, null=True, blank=True)
     model_name = models.CharField(max_length=255, null=True, blank=True)
     model_no = models.CharField(max_length=150, null=True, blank=True)
+    inward_status = models.CharField(max_length=50, default='Pending')
     
     # Prices ko hamesha Decimal me rakhna best hai calculation ke liye
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0, null=True, blank=True)

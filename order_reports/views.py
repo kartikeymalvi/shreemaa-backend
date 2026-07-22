@@ -4296,7 +4296,7 @@ class GRPORecordViewSet(viewsets.ModelViewSet):
                 try:
                     InvoiceShipment.objects.filter(
                         invoice_no__in=successful_invoices
-                    ).update(invoice_status='complete') # 👈 Yahan bhi change kiya
+                    ).update(inward_status='done') # 👈 Yahan bhi change kiya
                 except Exception as e:
                     print("Status update warning:", str(e))
             
@@ -4573,7 +4573,7 @@ def update_invoice_on_grpo_upload(sender, instance, created, **kwargs):
     if created and instance.grpo_invoice_number: 
         InvoiceShipment.objects.filter(
             invoice_no=instance.grpo_invoice_number
-        ).update(invoice_status='complete')      
+        ).update(inward_status='done')      
 
 class WarehouseAuditViewSet(viewsets.ModelViewSet):
     queryset = WarehouseAudit.objects.all().order_by('-id')
